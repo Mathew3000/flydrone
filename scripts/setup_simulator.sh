@@ -17,4 +17,7 @@ rm -rf simulator/.git
 # Patch 1 (see PATCHES.md #1): collections.Mapping -> collections.abc.Mapping
 sed -i 's/collections\.Mapping/collections.abc.Mapping/' simulator/gym_pybullet_drones/envs/BaseAviary.py
 
+# Patch 2 (see PATCHES.md #2): np.int -> int (removed in NumPy >= 1.24)
+sed -i 's/dtype=np\.int$/dtype=int/' simulator/gym_pybullet_drones/envs/VisionAviary.py
+
 echo "Done. Now: pip install -r requirements.txt (pins numpy==1.23.5, see PATCHES.md #2)"

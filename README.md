@@ -11,8 +11,13 @@ Voller Plan: [`docs/projektplan.md`](docs/projektplan.md).
 - [x] M0 -- Simulator gewaehlt und Sanity-Check bestanden: `scripts/sanity_hover.py`
       steuert 4 Rotoren per direktem RPM-Wert an und liest ein RGB-Kamerabild
       aus der Drohnen-Perspektive aus (`files/sanity/frame_0.png`).
-- [ ] M1 -- Kamerabilder offline durch den Medulla-Encoder + Konnektom-Sim
-      schicken (noch kein geschlossener Kreis).
+- [x] M1 -- Kamerabilder offline durch Medulla-Encoder (`connectome/medulla_encoder.py`,
+      optischer Fluss via OpenCV) + eine LIF-Konnektom-Simulation
+      (`connectome/lif_network.py`, scipy.sparse) geschickt und Motor-Neuron-
+      Output geloggt (`scripts/m1_offline_test.py`, `connectome/tests/test_toy_network.py`).
+      Laeuft noch gegen ein synthetisches Test-Netzwerk, nicht die echten
+      MaleCNS-Daten -- siehe `docs/connectome-data-access.md` fuer den fehlenden
+      Teil (neuPrint-Account/Token noetig).
 - [ ] M2 -- Geschlossener Kreis, Phase A (2 Freiheitsgrade: Schub + Gier aus
       Motor-Neuron-Pool-Summe/-Differenz, Roll/Pitch klassisch stabilisiert).
 - [ ] M3 -- Tuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset).
@@ -25,9 +30,11 @@ Voller Plan: [`docs/projektplan.md`](docs/projektplan.md).
 flydrone/
   simulator/     vendorter gym-pybullet-drones v1.0.0 (siehe PATCHES.md)
   scripts/       Sanity-/Test-Skripte, spaeter Trainings-/Eval-Skripte
-  connectome/    noch leer -- hier entsteht die Medulla-Encoder- und
-                 Konnektom-Anbindung (Neuronen-Sim laeuft auf dem
-                 GPU-Server, nicht auf diesem Rechner)
+  connectome/    Medulla-Encoder, LIF-Netzwerk-Engine, Motor-Decoder, Daten-Loader
+                 (neuPrint-Anbindung vorbereitet, noch ungetestet -- siehe
+                 docs/connectome-data-access.md). Laeuft bisher nur gegen ein
+                 synthetisches Testnetz; die echte 166k-Neuronen-Simulation
+                 gehoert auf den GPU-Server, nicht auf diesen Rechner.
   files/         Simulator-Outputs (Bilder, Logs) -- keine Quelldateien
   docs/          Projektplan und weitere Notizen
   requirements.txt
