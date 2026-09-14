@@ -104,3 +104,94 @@ der T4/T5 -> optomotorischer Kurskorrektur-Pfad (Horizontal-/Vertical-System-
 Zellen etc.) biologisch die passendere Wahl. Naechster Schritt: einzelne
 T4/T5-Subtypen (z. B. T4a/T5a) statt aller vier Subtypen auf einmal, um die
 Downstream-Abfrage handhabbar zu halten.
+
+## Alternative: lokale Bulk-Dateien statt neuPrint-API (14.09.2026)
+
+Statt einzelner neuPrint-Queries (die von dieser Sandbox aus ohnehin nicht
+erreichbar sind, siehe oben) gibt es die kompletten MaleCNS-Rohdaten auch als
+direkten, oeffentlichen Download -- kein Account/Token noetig, keine
+Query-Groessenlimits. Download-Befehle: siehe README.md, Abschnitt "Echte
+Konnektom-Daten: lokale Bulk-Dateien".
+
+Zwei Dateien, beide Apache-Arrow-Feather:
+- `body-annotations-male-cns-v1.0-minconf-0.5.feather` (~13 MB): eine Zeile
+  pro Neuron -- `bodyId`, `type`, `instance`, `somaSide` (L/R/M/None; die
+  reale anatomische Links-Rechts-Zuordnung), u. a.
+- `connectome-weights-male-cns-v1.0-minconf-0.5.feather` (~1.1 GB, ~152 Mio.
+  Zeilen): `body_pre`, `body_post`, `weight` -- das komplette
+  CNS-Konnektivitaets-Netz, nicht auf einen Zelltyp gefiltert.
+
+**Speicher-Hinweis:** `pd.read_feather()` auf die 1.1-GB-Datei OOM-killt den
+Prozess auf einer 3.8-GB-RAM-Maschine ohne Swap (bestaetigt). Loesung:
+`connectome/local_maleCNS.py` liest sie stattdessen ueber PyArrows
+IPC-Batch-Reader (`pa.ipc.open_file(...).get_batch(i)`), Batch fuer Batch
+(~65536 Zeilen), verworfen nach dem Filtern -- scannt alle 152 Mio. Zeilen in
+~5s bei flachem Speicherverbrauch. Nicht durch ein volles `read_feather()`
+ersetzen, ohne den Speicherverbrauch neu zu pruefen.
+
+`connectome/local_maleCNS.py` bietet:
+- `local_downstream_types(...)`: netzwerkfreies Aequivalent zu
+  `explore_downstream_types()`, ohne Query-Groessenlimit
+- `local_fetch_subnetwork(cell_types)`: Subnetz (nur interne Konnektivitaet
+  zwischen den angegebenen Typen), gleiche Rueckgabeform wie
+  `fetch_from_neuprint()`
+- `local_fetch_lr_subnetwork(...)`: wie oben, zusaetzlich nach `somaSide`
+  (L/R) in `visual_L`/`visual_R`/`motor_left`/`motor_right`-Populationen
+  aufgeteilt -- direkter Drop-in-Ersatz fuer `make_toy_network()`
+
+## Der echte Kurskorrektur-Pfad: T4/T5 -> HS/H1/H2 (bestaetigt lokal, 14.09.2026)
+
+`local_downstream_types(["T4.*", "T5.*"])` gegen die kompletten lokalen Daten
+(keine Query-Limits) bestaetigte: die Horizontal-System-Zellen **HSE, HSN,
+HSS, HST** sowie **H1, H2** (Lobula-Plate-Tangentialzellen) erhalten **>90%**
+ihres modellierten Eingangs von T4/T5 -- das ist der reale, in der Literatur
+gut belegte optomotorische Kurskorrektur-Pfad der Fliege (im Gegensatz zum
+LC4/LPLC2 -> Giant-Fiber-Fluchtreflex, siehe oben -- ballistischer
+Ein/Aus-Trigger, ungeeignet fuer kontinuierliche Gier-Steuerung).
+
+Damit ergibt `local_fetch_lr_subnetwork()` (Default-Parameter) ein echtes
+Subnetz: **13.597 Neuronen, 207.059 Synapsen**
+(`visual_L`: 6790, `visual_R`: 6795, `motor_left`: 6, `motor_right`: 6 --
+HS/H1/H2 hat insgesamt nur 12 Zellen, aber jede davon ist eine reale,
+gut charakterisierte Tangentialzelle mit breitem rezeptivem Feld, kein
+Kompromiss).
+
+## Kalibrierungs-Bug: reale Gewichte saettigen beide Motor-Pools (gefunden + behoben, 14.09.2026)
+
+Erster Test von `encode_to_drive_hemifield()` + `LIFNetwork` mit dem echten
+Subnetz (bei `gain=8.0`, dem fuer das Testnetz kalibrierten Wert) ergab fuer
+**jeden** Stimulus (auch reine Links-Bewegung) exakt `motor_left=0.2500,
+motor_right=0.2500` -- der `master=0.25`-Deckel aus
+`motor_decoder.decode_pool()`, also volle Saettigung auf beiden Seiten
+unabhaengig vom Reiz.
+
+Ursache (gefunden per Gain/Gewichts-Sweep, siehe
+`connectome/tests/test_real_connectome.py`): die realen MaleCNS-Gewichte sind
+rohe Synapsenanzahlen (Mittelwert ~2.6, Maximum 56), nicht die kleinen
+Zufallsgewichte (~0.15) des Testnetzes. Jede der 6 Motor-Zellen pro Seite
+erhaelt in Summe **>12.000** Gewichtseinheiten von den ~6.800
+Sehsystem-Neuronen der jeweiligen Seite -- selbst schwache Aktivitaet dort
+reicht, um die Motor-Zellen sofort auf Maximalrate zu treiben, unabhaengig
+von der tatsaechlichen Staerke/Seite des Reizes.
+
+**Fix:** `WEIGHT_SCALE = 0.0015` -- reale Gewichte vor dem Aufbau des
+`LIFNetwork` mit diesem Faktor multiplizieren (das reale-Daten-Aequivalent zu
+den kleinen Testnetz-Gewichten). Nach einem Sweep ueber Gewichts-Skalierung x
+Encoder-Gain bestaetigt: bei `WEIGHT_SCALE=0.0015, GAIN=8.0` liefert reine
+Links-Bewegung `motor_left≈0.25, motor_right≈0.006` (starke, saubere
+Asymmetrie), reine Rechts-Bewegung das Spiegelbild, und symmetrische Bewegung
+liefert `motor_left≈motor_right` (kein systematischer Links/Rechts-Bias durch
+die leicht unterschiedliche Neuronenzahl pro Seite). Alle drei Faelle sind
+jetzt Regressionstests in `connectome/tests/test_real_connectome.py`.
+
+## M2 mit echtem Konnektom: Drohne bleibt in der Luft (14.09.2026)
+
+`scripts/m2_real_connectome.py` (Kopie von `m2_closed_loop.py`, aber mit
+`local_fetch_lr_subnetwork()` + `encode_to_drive_hemifield()` +
+`WEIGHT_SCALE=0.0015` statt des Testnetzes) laeuft stabil: Drohne steigt in
+~1s auf Zielhoehe (1.0 m), roll/pitch bleiben bei 0.000 rad, z pendelt sich
+bei 1.005 m ein. Der Gier-Sollwert driftet waehrend des Steigflugs (durch die
+kamera-sichtbare Eigenbewegung) auf ~0.047 rad (~2.7°) und bleibt danach
+konstant, sobald keine Bildbewegung mehr da ist -- genau das erwartete
+Verhalten, jetzt mit dem echten Fliegen-Konnektom statt einem synthetischen
+Platzhalter.

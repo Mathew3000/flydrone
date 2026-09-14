@@ -116,3 +116,40 @@ def encode_to_drive(
             drive[idx] = gain * loom
 
     return drive
+
+
+def encode_to_drive_hemifield(
+    frame_prev: np.ndarray,
+    frame_curr: np.ndarray,
+    n_neurons: int,
+    cell_type_indices: dict[str, np.ndarray],
+    gain: float = 1.0,
+) -> np.ndarray:
+    """Real-connectome variant of encode_to_drive(): splits the camera frame
+    into left/right halves (a simplified stand-in for the fly's two
+    retinotopic visual hemifields) and drives the "visual_L"/"visual_R"
+    populations (see connectome.local_maleCNS.local_fetch_lr_subnetwork)
+    with that half's motion energy -- anatomical side, not cardinal
+    direction, is the split that's actually grounded in the local
+    MaleCNS data (somaSide) without guessing at T4/T5 subtype conventions.
+
+    Deliberately simpler than encode_to_drive()'s directional/looming split:
+    this feeds overall |flow| magnitude per half, not direction-tuned or
+    ON/OFF (T4 vs T5) selective drive. That's a reasonable first cut given
+    T4 and T5 are driven identically here; refining it (T4 from brightness
+    increments, T5 from decrements) is a natural next step, not done yet.
+    """
+    drive = np.zeros(n_neurons, dtype=np.float64)
+    flow = optical_flow(frame_prev, frame_curr)
+    h, w = flow.shape[:2]
+    mid = w // 2
+    left_energy = float(np.abs(flow[:, :mid]).mean())
+    right_energy = float(np.abs(flow[:, mid:]).mean())
+
+    idx_l = cell_type_indices.get("visual_L")
+    idx_r = cell_type_indices.get("visual_R")
+    if idx_l is not None and len(idx_l):
+        drive[idx_l] = gain * left_energy
+    if idx_r is not None and len(idx_r):
+        drive[idx_r] = gain * right_energy
+    return drive
