@@ -111,26 +111,58 @@ def make_toy_network(seed: int = 0):
     }
 
 
-def fetch_from_neuprint(cell_types: list[str], dataset: str = "male-cns:v0.9", token: str | None = None):
-    """Sketch of the real data path -- requires `pip install neuprint-python`
-    and a neuPrint account/token (see docs/connectome-data-access.md).
-    Not exercised by any test yet; the exact dataset tag and cell-type name
-    strings (e.g. is it "T4a" or something else in MaleCNS) need confirming
-    once real access is available.
-    """
-    from neuprint import Client, fetch_neurons, fetch_adjacencies, NeuronCriteria as NC
-
+def _neuprint_client(dataset: str | None, token: str | None):
+    from neuprint import Client
     token = token or os.environ.get("NEUPRINT_APPLICATION_CREDENTIALS")
     if not token:
         raise RuntimeError(
             "No neuPrint token found. Set NEUPRINT_APPLICATION_CREDENTIALS "
-            "or pass token= explicitly. See docs/connectome-data-access.md."
+            "(e.g. via .env, see .env.example) or pass token= explicitly. "
+            "See docs/connectome-data-access.md."
         )
-    Client("neuprint.janelia.org", dataset=dataset, token=token)
+    # IMPORTANT: keep a strong reference to this object and pass it as
+    # client= to every query call below. neuprint-python tracks the
+    # "default client" via a *weakref* (see their client.py) -- an
+    # unassigned `Client(...)` expression gets garbage-collected almost
+    # immediately, which produced the confusing
+    # "No default Client has been set yet" error the first time this was
+    # tried, even though the Client() call itself succeeded.
+    return Client("neuprint.janelia.org", dataset=dataset, token=token)
 
-    neuron_df, _ = fetch_neurons(NC(type=cell_types))
+
+def list_neuprint_datasets(token: str | None = None) -> list[str]:
+    """Which datasets this neuPrint server/token can see -- use this before
+    fetch_from_neuprint() if you're not sure of the exact dataset tag
+    (e.g. "male-cns:v0.9" was a guess in earlier code here, unconfirmed)."""
+    client = _neuprint_client(dataset=None, token=token)
+    return list(client.fetch_datasets().keys())
+
+
+def fetch_from_neuprint(cell_types: list[str], dataset: str | None = None, token: str | None = None):
+    """Real data path -- requires `pip install neuprint-python` and a
+    neuPrint account/token (see docs/connectome-data-access.md). The exact
+    dataset tag and cell-type name strings (e.g. is it "T4a" or something
+    else in MaleCNS) need confirming once real access is available -- pass
+    dataset=None (default) to use the server's default dataset, or call
+    list_neuprint_datasets() first to see the exact tag to pass.
+    """
+    from neuprint import fetch_neurons, fetch_adjacencies, NeuronCriteria as NC
+
+    client = _neuprint_client(dataset=dataset, token=token)
+
+    neuron_df, _ = fetch_neurons(NC(type=cell_types), client=client)
+    if len(neuron_df) == 0:
+        raise RuntimeError(
+            f"fetch_neurons matched 0 neurons for {cell_types}. Either the "
+            "dataset is wrong (try list_neuprint_datasets()) or these type "
+            "strings don't match MaleCNS's naming convention -- check a few "
+            "known body IDs on neuprint.janelia.org's website to see how "
+            "'type' is actually spelled there."
+        )
     body_ids = neuron_df["bodyId"].to_numpy()
-    _, conn_df = fetch_adjacencies(NC(bodyId=body_ids), NC(bodyId=body_ids))
+    _, conn_df = fetch_adjacencies(
+        NC(bodyId=body_ids), NC(bodyId=body_ids), omit_rois=True, client=client
+    )
 
     id_to_idx = {bid: i for i, bid in enumerate(body_ids)}
     n = len(body_ids)
