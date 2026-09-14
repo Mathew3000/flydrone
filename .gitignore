@@ -5,4 +5,5 @@ files/
 _to_delete/
 simulator/**/__pycache__/
 simulator/
-.env
+.env*
+!.env.example
