@@ -151,6 +151,59 @@ def list_neuprint_datasets(token: str | None = None) -> list[str]:
     return list(client.fetch_datasets().keys())
 
 
+def explore_downstream_types(source_types: list[str], top_n: int = 25,
+                              dataset: str | None = None, token: str | None = None):
+    """Empirically discover what a set of cell types actually connects to
+    downstream in this dataset, ranked by total synapse weight -- instead of
+    guessing descending-neuron/motor-neuron type names from the literature.
+
+    T4/T5/LC4/LPLC2 (fetched by fetch_from_neuprint so far) are purely
+    sensory/interneuron populations -- they don't drive anything by
+    themselves. MaleCNS covers the whole CNS (brain + nerve cord), so the
+    real path to actual motor neurons should be discoverable by walking
+    downstream from here, layer by layer, rather than assumed.
+
+    Start with the smaller populations (e.g. LC4, LPLC2 -- ~300 neurons
+    combined) before T4/T5 (~13.5k neurons, larger/slower query, and their
+    fan-out into the lobula plate tangential cell system is broader).
+
+    Returns a pandas DataFrame: columns ['type', 'total_weight', 'n_bodies'],
+    sorted by total_weight descending -- the top rows are the strongest
+    downstream targets, i.e. the most promising next layer to fetch with
+    fetch_from_neuprint() once you've picked names from this list.
+    """
+    from neuprint import fetch_neurons, fetch_adjacencies, NeuronCriteria as NC
+    import pandas as pd
+
+    client = _neuprint_client(dataset=dataset, token=token)
+
+    source_df, _ = fetch_neurons(NC(type=source_types), client=client)
+    if len(source_df) == 0:
+        raise RuntimeError(f"No neurons matched {source_types} -- check the type strings.")
+    source_ids = source_df["bodyId"].to_numpy()
+
+    _, conn_df = fetch_adjacencies(
+        NC(bodyId=source_ids), None, omit_rois=True, client=client
+    )
+    if len(conn_df) == 0:
+        raise RuntimeError(f"{source_types} matched neurons but they have no downstream connections in this dataset.")
+
+    target_ids = conn_df["bodyId_post"].unique()
+    target_df, _ = fetch_neurons(NC(bodyId=target_ids), client=client)
+    type_by_id = dict(zip(target_df["bodyId"], target_df["type"]))
+    conn_df = conn_df.copy()
+    conn_df["post_type"] = conn_df["bodyId_post"].map(type_by_id)
+
+    summary = (
+        conn_df.groupby("post_type")
+        .agg(total_weight=("weight", "sum"), n_bodies=("bodyId_post", "nunique"))
+        .sort_values("total_weight", ascending=False)
+        .reset_index()
+        .rename(columns={"post_type": "type"})
+    )
+    return summary.head(top_n)
+
+
 def fetch_from_neuprint(cell_types: list[str], dataset: str | None = None, token: str | None = None):
     """Real data path -- requires `pip install neuprint-python` and a
     neuPrint account/token (see docs/connectome-data-access.md). The exact
