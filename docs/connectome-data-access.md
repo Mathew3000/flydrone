@@ -53,3 +53,28 @@ du einen Account hast, ist der naechste Schritt: `fetch_from_neuprint(["T4.*",
 "T5.*", "LC4", "LPLC2"])` probeweise laufen lassen, pruefen ob die
 Zelltyp-Strings matchen, und die zurueckgegebene `weights`-Matrix anstelle von
 `make_toy_network()` in `scripts/m1_offline_test.py` einsetzen.
+
+## Bekannte Einschraenkung: neuPrint von hier aus nicht erreichbar
+
+Getestet mit echtem Token (14.09.2026): `pip install neuprint-python` klappt
+(PyPI ist erreichbar), aber jeder Request an `neuprint.janelia.org` scheitert
+mit `ProxyError ... 403 Forbidden` -- die Netzwerk-Freigabe der Cowork-
+Sandbox-Umgebung, in der Claude hier arbeitet, laesst nur eine bestimmte
+Domain-Allowlist durch (GitHub/PyPI funktionieren, neuPrint nicht).
+
+`fetch_from_neuprint()` in `connectome/data_loader.py` ist fertig und sollte
+funktionieren, muss aber von einem Rechner mit normalem Internetzugang
+ausgefuehrt werden -- z. B. direkt auf deinem Windows-Rechner (ausserhalb
+dieser Sandbox) oder auf dem GPU-Server, wo ohnehin die eigentliche
+166k-Neuronen-Simulation laufen soll. Kurztest zum Ausprobieren:
+
+```
+cd flydrone
+pip install -r requirements.txt
+python -c "from connectome.data_loader import fetch_from_neuprint; d = fetch_from_neuprint(['T4.*','T5.*','LC4','LPLC2']); print(d['n_neurons'], list(d['cell_type_indices'].keys()))"
+```
+
+Falls das laeuft: Ergebnis (Anzahl Neuronen, welche Zelltyp-Keys nicht leer
+sind) zurueckmelden, dann passe ich die Cell-Type-Regex in
+`medulla_encoder.py`/`data_loader.py` bei Bedarf an die tatsaechliche
+MaleCNS-Namenskonvention an.
