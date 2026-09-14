@@ -111,6 +111,18 @@ def make_toy_network(seed: int = 0):
     }
 
 
+# Confirmed by hitting the server (2026-09-14): unlike some single-dataset
+# neuPrint deployments, neuprint.janelia.org hosts many datasets and refuses
+# to guess -- Client(dataset=None) raises immediately, and its error message
+# happens to list every dataset it knows about:
+#   ['hemibrain:v1.2.1', 'male-cns:v0.9', 'male-cns:v1.0', 'manc:v1.0',
+#    'manc:v1.2.1', 'manc:v1.2.3', 'mushroombody', 'optic-lobe:v1.0.1',
+#    'optic-lobe:v1.1']
+# Using the newest MaleCNS tag as our default; pass dataset= explicitly to
+# override (e.g. to compare against male-cns:v0.9).
+DEFAULT_MALE_CNS_DATASET = "male-cns:v1.0"
+
+
 def _neuprint_client(dataset: str | None, token: str | None):
     from neuprint import Client
     token = token or os.environ.get("NEUPRINT_APPLICATION_CREDENTIALS")
@@ -127,14 +139,15 @@ def _neuprint_client(dataset: str | None, token: str | None):
     # immediately, which produced the confusing
     # "No default Client has been set yet" error the first time this was
     # tried, even though the Client() call itself succeeded.
-    return Client("neuprint.janelia.org", dataset=dataset, token=token)
+    return Client("neuprint.janelia.org", dataset=dataset or DEFAULT_MALE_CNS_DATASET, token=token)
 
 
 def list_neuprint_datasets(token: str | None = None) -> list[str]:
-    """Which datasets this neuPrint server/token can see -- use this before
-    fetch_from_neuprint() if you're not sure of the exact dataset tag
-    (e.g. "male-cns:v0.9" was a guess in earlier code here, unconfirmed)."""
-    client = _neuprint_client(dataset=None, token=token)
+    """Which datasets this neuPrint server/token can see. Needs *a* valid
+    dataset to bootstrap the Client connection (this server won't construct
+    one with dataset=None), so this uses DEFAULT_MALE_CNS_DATASET just to
+    connect, then asks the server for the full list."""
+    client = _neuprint_client(dataset=DEFAULT_MALE_CNS_DATASET, token=token)
     return list(client.fetch_datasets().keys())
 
 
