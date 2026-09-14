@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+files/
+_to_delete/
+simulator/**/__pycache__/

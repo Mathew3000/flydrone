@@ -1,0 +1,10 @@
+# Pinned for gym-pybullet-drones v1.0.0 (2021 vintage) running on Python 3.10.
+# The current main branch of the project (v2.2.0, github.com/learnsyslab/gym-pybullet-drones)
+# requires Python >=3.12 and is not used here yet -- see PATCHES.md.
+numpy==1.23.5
+scipy
+Pillow
+matplotlib
+cycler
+gym==0.26.2
+pybullet
