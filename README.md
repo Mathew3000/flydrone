@@ -18,8 +18,15 @@ Voller Plan: [`docs/projektplan.md`](docs/projektplan.md).
       Laeuft noch gegen ein synthetisches Test-Netzwerk, nicht die echten
       MaleCNS-Daten -- siehe `docs/connectome-data-access.md` fuer den fehlenden
       Teil (neuPrint-Account/Token noetig).
-- [ ] M2 -- Geschlossener Kreis, Phase A (2 Freiheitsgrade: Schub + Gier aus
-      Motor-Neuron-Pool-Summe/-Differenz, Roll/Pitch klassisch stabilisiert).
+- [x] M2 -- Geschlossener Kreis, Phase A (`scripts/m2_closed_loop.py`):
+      Kamera -> Medulla-Encoder -> LIF-Sim -> Motor-Decoder steuert Gier-
+      und Hoehen-Sollwert; Roll/Pitch/Position haelt gym-pybullet-drones'
+      eigener DSLPIDControl-Regler (bewusst wiederverwendet statt selbst
+      gebaut). Ergebnis: Drohne steigt stabil auf Zielhoehe, waehrend
+      dessen driftet der Gier-Sollwert sichtbar mit dem, was die Kamera an
+      Bewegung sieht -- sobald sie ruhig schwebt (keine Bildaenderung mehr),
+      bleibt auch der Netzwerk-Output bei ~0. Noch das synthetische
+      Testnetz, keine echten MaleCNS-Daten.
 - [ ] M3 -- Tuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset).
 - [ ] M4 -- Phase B, 4 Freiheitsgrade.
 - [ ] M5 -- Auswertung (Stretch): emergentes Looming-Ausweichen / Hoehenhaltung?
@@ -40,6 +47,13 @@ flydrone/
   requirements.txt
   PATCHES.md     Aenderungen am vendorten Simulator-Code, mit Begruendung
 ```
+
+## Echte Konnektom-Daten (neuPrint) einrichten
+
+`.env.example` nach `.env` kopieren (im Projekt-Wurzelverzeichnis) und den
+neuPrint-API-Token eintragen -- `.env` ist gitignored, landet also nie im
+Repo. `connectome/data_loader.py` liest sie automatisch ein, kein manuelles
+Setzen von Windows-Umgebungsvariablen noetig. Details: `docs/connectome-data-access.md`.
 
 ## Setup (dieser Rechner)
 

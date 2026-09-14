@@ -26,6 +26,31 @@ import numpy as np
 import scipy.sparse as sp
 
 
+def _load_dotenv(path: str | None = None) -> None:
+    """Minimal .env loader (no python-dotenv dependency): reads KEY=VALUE
+    lines from flydrone/.env, if present, into os.environ -- but never
+    overwrites a variable that's already set in the real environment.
+    Deliberately tiny/dependency-free; see .env.example for the expected
+    format. Windows env vars are enough of a hassle that a project-local
+    .env file (gitignored) is the recommended path -- see
+    docs/connectome-data-access.md.
+    """
+    env_path = path or os.path.join(os.path.dirname(__file__), "..", ".env")
+    if not os.path.isfile(env_path):
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
 def make_toy_network(seed: int = 0):
     """A small synthetic network standing in for the real connectome, purely
     to prove the pipeline wiring end-to-end (see M1 in the project plan).
