@@ -78,3 +78,29 @@ Falls das laeuft: Ergebnis (Anzahl Neuronen, welche Zelltyp-Keys nicht leer
 sind) zurueckmelden, dann passe ich die Cell-Type-Regex in
 `medulla_encoder.py`/`data_loader.py` bei Bedarf an die tatsaechliche
 MaleCNS-Namenskonvention an.
+
+## Zwischenstand: echte Daten abgerufen (14.09.2026)
+
+`fetch_from_neuprint(['T4.*','T5.*','LC4','LPLC2'])` funktioniert (Fix siehe
+Commit-History): 13.896 Neuronen total (T4: 6865, T5: 6720, LC4: 126,
+LPLC2: 185), Datensatz `male-cns:v1.0`.
+
+`explore_downstream_types(['LC4','LPLC2'])` fand als staerkste echte Ziele
+u. a. **DNp01** (Giant Fiber, 2 Zellen -- exakt wie in der Literatur), sowie
+DNp02/04/06/11/103, DNg40 -- das ist der bekannte visuelle
+Fluchtreflex-Schaltkreis (Sprung + Fluginitiierung).
+
+`explore_downstream_types(['DNp01','DNp02','DNp04','DNp06','DNp11','DNp103','DNg40'])`
+zeigte danach nur noch schwach gewichtete AN-/IN-Zelltypen (aufsteigend bzw.
+lokale Zwischenneuronen) -- vermutlich weil die eigentliche
+Giant-Fiber-Ausgangssynapse (auf das Sprungmuskel-Motoneuron TTMn) in der
+Literatur als teilweise **elektrisch** beschrieben ist und in rein
+chemisch-synapsenbasierten Gewichten hier untergewichtet erscheint.
+
+**Kurswechsel:** Der Fluchtreflex (LC4/LPLC2 -> Giant Fiber) ist ein
+ballistischer Ein/Aus-Trigger, kein abgestuftes Signal -- fuer die
+kontinuierliche Gier-/Kurssteuerung, die wir fuer die Drohne brauchen, ist
+der T4/T5 -> optomotorischer Kurskorrektur-Pfad (Horizontal-/Vertical-System-
+Zellen etc.) biologisch die passendere Wahl. Naechster Schritt: einzelne
+T4/T5-Subtypen (z. B. T4a/T5a) statt aller vier Subtypen auf einmal, um die
+Downstream-Abfrage handhabbar zu halten.
