@@ -4,3 +4,4 @@ __pycache__/
 files/
 _to_delete/
 simulator/**/__pycache__/
+simulator/

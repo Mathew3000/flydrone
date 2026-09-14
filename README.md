@@ -39,6 +39,7 @@ flydrone/
 ```
 python3 -m venv venv
 source venv/bin/activate   # oder venv\Scripts\activate unter Windows
+bash scripts/setup_simulator.sh   # klont + patcht simulator/ (gitignored, ~28MB)
 pip install -r requirements.txt
 PYTHONPATH=simulator python scripts/sanity_hover.py
 ```
