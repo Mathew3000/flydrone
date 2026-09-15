@@ -40,8 +40,9 @@ Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](d
 | M0 | Simulator gewählt, RPM-Ansteuerung + Kamera-Sanity-Check | ✅ erledigt |
 | M1 | Medulla-Encoder -> LIF-Netzwerk -> Motor-Decoder, offline getestet | ✅ erledigt (synthetisch + echtes Konnektom) |
 | M2 | Geschlossener Regelkreis, Phase A (Gier + Höhe) | ✅ erledigt (synthetisch + echtes Konnektom) |
-| M3 | Feintuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset) | ⏳ offen |
-| M4 | Phase B, 4 Freiheitsgrade | ⏳ offen |
+| M3 | Feintuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset) | ✅ erledigt (Gain pro Encoder kalibriert, Optomotorik-Reaktion nachgewiesen) |
+| M3b | Absteigende Neuronen als echte Ausgabeschicht | ✅ erledigt (T4/T5 → HS/H1/H2 → DNb03/DNg41/DNp15/DNp17/DNa02) |
+| M4 | Phase B, 4 Freiheitsgrade | ⏳ offen (VS-Zellen fehlen in MaleCNS unter dem Namen — erst Typ-Recherche nötig) |
 | M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ⏳ offen |
 
 **Aktuelles Ergebnis (M2, `scripts/m2_real_connectome.py`):** Die Drohne
@@ -51,19 +52,52 @@ reagiert im Gier-Kanal sichtbar auf das, was die Kamera an Bewegung sieht.
 Details, inklusive der Gewichts-Kalibrierung, die dafür nötig war:
 [`docs/connectome-data-access.md`](docs/connectome-data-access.md).
 
+**Optomotorik-Nachweis (M3, `scripts/m3_optomotor.py`):** In einer rotierenden
+Streifentrommel dreht die Drohne mit der Trommel mit und kehrt die Drehrichtung
+um, wenn die Trommel es tut — die klassische Optomotorik-Reaktion der Fliege,
+getrieben von genau dem T4/T5 → HS/H1/H2-Pfad. Angebunden (Pose fixiert, reiner
+Auslesetest): CCW +0.075 ± 0.003 gegen CW −0.080 ± 0.005 über je 3 Durchgänge,
+vollständig überlappungsfrei. Aufzeichnung des Laufs als MP4 und Zeitreihen-Plot
+unter `files/optomotor/`.
+
+Seit M3b wird nicht mehr aus HS/H1/H2 dekodiert, sondern aus den **absteigenden
+Neuronen**, die diese treiben — dem tatsächlichen Ausgang des Gehirns zum
+Bauchmark statt aus Interneuronen. Die Reaktion bleibt richtungsselektiv
+(CCW −0.0118 ± 0.0007 gegen CW +0.0140 ± 0.0009). Welche DNs das Lenksignal
+tragen, wurde gemessen statt geraten: **DNg41** ist mit Abstand am stärksten
+(−34 / +31 Hz Seitendifferenz), gefolgt von DNp15 und DNb03. **DNa02 — das
+kanonische Lenk-DN der Literatur — bleibt in diesem Modell stumm**, weil es nur
+Gewicht 182 aus HS bekommt gegen DNg41s 1166; sein übriger Eingang liegt
+außerhalb dieses Teilnetzes.
+
+Nötig dafür war ein richtungsselektiver Encoder
+(`encode_to_drive_progressive`); mit dem älteren `encode_to_drive_hemifield`,
+der `|flow|` benutzt und damit das Vorzeichen der Bewegung wegwirft, gibt es
+keine messbare Reaktion — beide Varianten stehen als Vergleich im Skript.
+
 ## Voraussetzungen
 
-- Python 3.10 (siehe [Design-Entscheidungen](#design-entscheidungen))
+- Python 3.10 bis 3.12 (siehe [Design-Entscheidungen](#design-entscheidungen));
+  verifiziert auf 3.12. Nicht 3.13+ -- dafür fehlen pybullet/opencv/`gym`-Wheels.
 - ~30 MB Platz für den vendorten Simulator, optional ~1.1 GB für die echten
   Konnektom-Rohdaten
 
 ## Installation
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+python3.12 -m venv .venv
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
 bash scripts/setup_simulator.sh   # klont + patcht simulator/ (gitignored, ~28MB)
 pip install -r requirements.txt
+```
+
+**Auf macOS** hat pybullet kein fertiges Wheel und muss kompiliert werden; das
+schlägt mit dem aktuellen SDK fehl (`_stdio.h: expected identifier or '('`),
+weil das mitgelieferte zlib `fdopen` als Makro definiert. Deshalb pybullet dort
+vorab einzeln installieren:
+
+```bash
+CFLAGS="-Dfdopen=fdopen" pip install pybullet
 ```
 
 Sanity-Check:
@@ -81,9 +115,14 @@ Drohnensicht).
 | Skript | Was es macht | Konnektom |
 |---|---|---|
 | `scripts/sanity_hover.py` | M0: RPM-Ansteuerung + Kamerabild, kein Konnektom | -- |
-| `scripts/m1_offline_test.py` | M1: Kamera-Sequenz offline durch die Pipeline schicken | synthetisch |
+| `scripts/capture_frame_sequence.py` | nimmt die Kamera-Sequenz für M1 auf (`files/m1/frame_sequence.npy`) | -- |
+| `scripts/m1_offline_test.py` | M1: Kamera-Sequenz offline durch die Pipeline schicken (braucht die Aufnahme oben) | synthetisch |
 | `scripts/m2_closed_loop.py` | M2: geschlossener Regelkreis | synthetisch |
 | `scripts/m2_real_connectome.py` | M2: geschlossener Regelkreis | **echtes MaleCNS-Konnektom** (braucht die Rohdaten, siehe unten) |
+| `scripts/m2_room.py` | M2 im texturierten Raum, direkt gegen die leere Welt gemessen | **echtes MaleCNS-Konnektom** |
+| `scripts/preview_room.py` | rendert den Raum von außen + aus Drohnensicht nach `files/room/` | -- |
+| `scripts/m3_optomotor.py` | Optomotorik-Experiment: rotierende Streifentrommel, beide Encoder im Vergleich; schreibt `files/optomotor/flight.mp4` + `response.png` | **echtes MaleCNS-Konnektom** |
+| `scripts/m3_gain_sweep.py` | Gain-Kalibrierung gegen den Trommelreiz (`SWEEP_GAINS=`, `M3_ENCODER=`) | **echtes MaleCNS-Konnektom** |
 
 Alle Skripte mit `PYTHONPATH=simulator` ausführen, z. B.:
 
@@ -147,6 +186,8 @@ ein. Details: [`docs/connectome-data-access.md`](docs/connectome-data-access.md)
 flydrone/
   simulator/     vendorter gym-pybullet-drones v1.0.0, gitignored (siehe PATCHES.md)
   scripts/       ausführbare Ein-Zweck-Skripte (siehe Nutzung oben)
+  world/
+    room.py        texturierter 3D-Raum + rotierbare Optomotorik-Trommel
   connectome/
     medulla_encoder.py   Kamerabild -> optischer Fluss -> Drive-Vektor
     lif_network.py       LIF-Netzwerk-Engine (scipy.sparse)
@@ -164,8 +205,9 @@ flydrone/
 ## Design-Entscheidungen
 
 **Simulator: gym-pybullet-drones, Tag `v1.0.0`.** Die aktuelle
-Hauptversion braucht Python >=3.12; `v1.0.0` läuft mit Python 3.10 und
-bietet mit `VisionAviary` genau das Nötige: direkte RPM-Ansteuerung aller
+Hauptversion braucht Python >=3.12; `v1.0.0` läuft mit den zwei Patches
+unten auch noch auf 3.12 (verifiziert) und bietet mit `VisionAviary` genau
+das Nötige: direkte RPM-Ansteuerung aller
 vier Rotoren plus Kamerabild aus Drohnensicht, ohne eingebauten Flugregler
 im Weg. Details und die zwei nötigen Kompatibilitäts-Patches (Python
 3.10/aktuelles NumPy):
