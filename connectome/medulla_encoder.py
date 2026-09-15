@@ -424,3 +424,63 @@ def encode_to_drive_vertical(
     if idx_r is not None and len(idx_r):
         drive[idx_r] = gain * right_down
     return drive
+
+
+def encode_to_drive_centring(
+    frame_prev: np.ndarray,
+    frame_curr: np.ndarray,
+    n_neurons: int,
+    cell_type_indices: dict[str, np.ndarray],
+    gain: float = 1.0,
+    spacing: int = 2,
+    side_fraction: float = 0.25,
+) -> np.ndarray:
+    """Lateral flow balance -- the corridor centring signal.
+
+    This is the readout that actually works in a maze, and arriving at it took
+    ruling the others out by measurement. Flying a corridor at 1.2 m/s towards
+    a wall (scripts/m6_maze.py), drive against distance-to-wall:
+
+        global radial (encode_to_drive_looming)  0.0014 -> 0.0039, non-monotonic,
+                                                 its maximum 10.8 m from the wall
+        frontal third only                       0.0001 -> 0.0007, then collapses
+                                                 to exactly 0 inside 1.5 m
+        lateral imbalance (this)                 0.0036 -> 0.0104, monotonic
+
+    The geometry is why. In forward translation the optic flow is a radial
+    expansion about the direction of travel, so the obstacle you are heading
+    into sits at the focus of expansion where image motion is ZERO, while the
+    side walls -- at constant distance and high angular speed -- dominate any
+    global pooling. A looming detector reports an object approaching a
+    stationary observer well and a wall approached by a moving one badly.
+
+    What the side walls do carry is distance: the nearer wall streams past
+    faster. Comparing the two sides gives an error signal that steers away from
+    the closer one, which is the centring response bees and flies are known for
+    and what actually keeps an insect off the walls of a tunnel.
+
+    Direction is deliberately discarded here -- only |motion| per side matters,
+    since both walls stream backwards regardless of which is closer. That makes
+    this the one task where encode_to_drive_hemifield's much-criticised
+    rectified magnitude is the right computation rather than the wrong one; the
+    criticism in encode_to_drive_progressive's docstring is about rotation,
+    where direction is the entire signal.
+
+    `side_fraction` of the image is taken from each edge, leaving the frontal
+    field out: the middle contributes little flow and mostly dilutes the
+    comparison.
+    """
+    drive = np.zeros(n_neurons, dtype=np.float64)
+    resp = np.abs(reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=1))
+    w = resp.shape[1]
+    edge = max(int(w * side_fraction), 1)
+
+    left_flow = float(np.mean(resp[:, :edge]))
+    right_flow = float(np.mean(resp[:, -edge:]))
+
+    for key, value in (("looming_L", left_flow), ("looming_R", right_flow),
+                       ("visual_L", left_flow), ("visual_R", right_flow)):
+        idx = cell_type_indices.get(key)
+        if idx is not None and len(idx):
+            drive[idx] = gain * value
+    return drive

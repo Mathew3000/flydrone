@@ -182,6 +182,32 @@ und überschlägt sich ab 10000. Der Übergang ist eine Bifurkation, kein Verlau
 — es gibt kein Regime, in dem die Achse lose genug für ein visuelles Signal und
 zugleich flugfähig ist.
 
+**Freier Flug im Labyrinth (`scripts/m6_maze.py`):** Die Drohne fliegt
+selbstständig durch ein Labyrinth (`world.build_maze`, als ASCII-Karte
+definiert) und **nimmt die erste Kurve**, wo sie ungesteuert stur in die Wand
+fliegt. Null Wandkontakte über 40 s gegen 891 ohne Steuerung; mit umgekehrtem
+Vorzeichen zieht sie nach 1.8 m hinein.
+
+Welcher Auslesekanal das leistet, wurde gemessen, und der naheliegende verlor.
+Drive gegen Wandabstand im Korridorflug:
+
+| Auslesung | 8–12 m | 0.6–1 m |
+|---|---|---|
+| global radial (Looming) | 0.0014 | 0.0039, Maximum bei 10.8 m |
+| nur frontales Drittel | 0.0001 | **exakt 0** ab 1.5 m |
+| **seitliches Gleichgewicht** | 0.0036 | **0.0104**, monoton |
+
+Der Grund ist geometrisch: Bei Vorwärtsflug liegt die Wand, auf die man
+zufliegt, im **Expansionsfokus** — dort ist die Bildbewegung null — während die
+Seitenwände bei konstantem Abstand und hoher Winkelgeschwindigkeit jede globale
+Mittelung dominieren. Ein Looming-Detektor meldet ein Objekt, das sich einem
+ruhenden Beobachter nähert, gut; eine Wand, auf die man zufliegt, schlecht.
+
+`encode_to_drive_centring` nutzt deshalb den Betrag pro Bildhälfte — ausgerechnet
+die Rechnung, die für die Optomotorik falsch war, weil sie die Richtung
+wegwirft. Hier ist das richtig: beide Wände streichen rückwärts, nur ihr
+Tempoverhältnis zählt.
+
 ## Voraussetzungen
 
 - Python 3.10 bis 3.12 (siehe [Design-Entscheidungen](#design-entscheidungen));

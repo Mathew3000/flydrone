@@ -253,3 +253,76 @@ def spawn_object(client: int, half_size: float = 0.5, position=(8.0, 0.0, 1.0),
 def move_object(client: int, body: int, position) -> None:
     p.resetBasePositionAndOrientation(body, list(position), [0, 0, 0, 1],
                                       physicsClientId=client)
+
+
+# Corridors two cells wide so a 3 m span stays flyable; S is the start cell,
+# G the goal. Authored as a map rather than as coordinates because the layout
+# is the thing most likely to be changed, and a list of box positions is
+# unreadable the moment it is longer than a few entries.
+DEFAULT_MAZE = """\
+#########
+#S......#
+#.#####.#
+#.#...#.#
+#.#.#.#.#
+#...#.#.#
+#####.#.#
+#G....#.#
+#########"""
+
+
+def build_maze(client: int, layout: str = DEFAULT_MAZE, cell: float = 2.5,
+               height: float = 3.0, plane_id: int | None = None, seed: int = 0) -> dict:
+    """Build a maze of box walls from an ASCII map. Returns start/goal in metres.
+
+    Walls are textured rather than flat-shaded, unlike build_room's bars. The
+    bars there are a grating on purpose -- a rotation stimulus needs a
+    well-defined spatial frequency. Here the walls are something to be seen
+    approaching, and expansion of a surface is what the looming encoder reads;
+    a texture gives it structure across the whole face instead of only at the
+    silhouette. The mosaic is also isotropic, which matters:
+    encode_to_drive_looming was once measured on a vertically striped wall and
+    gave a confounded result, because a vertical grating carries no vertical
+    gradient at all (see its docstring).
+
+    The maze is a closed course with no ceiling, so a drone that climbs can
+    leave it. That is intentional -- flying over the walls is a failure mode
+    worth being able to observe rather than one to design away.
+    """
+    rows = [r for r in layout.strip().splitlines()]
+    n_rows, n_cols = len(rows), max(len(r) for r in rows)
+
+    def to_world(row, col):
+        """Grid cell -> world centre. Row 0 is at +y so the map reads as drawn."""
+        return ((col - (n_cols - 1) / 2.0) * cell,
+                ((n_rows - 1) / 2.0 - row) * cell)
+
+    floor_texture_id = None
+    if plane_id is not None:
+        floor_path = make_mosaic_texture(os.path.join(TEXTURE_DIR, f"mosaic_{seed}.png"),
+                                         seed=seed + 1)
+        floor_texture_id = p.loadTexture(floor_path, physicsClientId=client)
+        p.changeVisualShape(plane_id, -1, textureUniqueId=floor_texture_id,
+                            physicsClientId=client)
+
+    wall_path = make_mosaic_texture(os.path.join(TEXTURE_DIR, f"wall_{seed}.png"),
+                                    cells=12, seed=seed + 2, low=70, high=250)
+    wall_texture = p.loadTexture(wall_path, physicsClientId=client)
+
+    walls, start, goal = [], None, None
+    for r, row in enumerate(rows):
+        for c, ch in enumerate(row):
+            x, y = to_world(r, c)
+            if ch == "#":
+                body = _box(client, [cell / 2.0, cell / 2.0, height / 2.0],
+                            [x, y, height / 2.0], BAR_LIGHT)
+                p.changeVisualShape(body, -1, textureUniqueId=wall_texture,
+                                    physicsClientId=client)
+                walls.append(body)
+            elif ch == "S":
+                start = (x, y)
+            elif ch == "G":
+                goal = (x, y)
+
+    return {"walls": walls, "start": start, "goal": goal, "cell": cell,
+            "layout": rows, "floor_texture": floor_texture_id}
