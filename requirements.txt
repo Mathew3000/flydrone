@@ -17,3 +17,6 @@ opencv-python-headless
 pandas
 pyarrow
 neuprint-python
+
+# Nur fuer die Tests (connectome/tests/).
+pytest
