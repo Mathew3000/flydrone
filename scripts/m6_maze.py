@@ -33,6 +33,19 @@ project; the connectome does not say which pool means "turn left". Both signs
 are run, and a run with steering disabled gives the baseline any claim has to
 beat.
 
+What it achieves and where it stops: the drone flies the first corridor and
+takes the first corner, which the unsteered run cannot -- that one flies
+straight into the wall and stays there. Over a longer run it follows the next
+corridor and then wedges itself against the wall at the second turn. The
+40 s figure of zero wall contacts is real but is a window shorter than the
+failure; at 120 s there are contacts.
+
+The limit is the one encode_to_drive_centring names: centring keeps the drone
+off the side walls, and nothing in this pipeline sees the wall AHEAD. Finishing
+a maze needs a frontal close-range channel, which means retinotopic receptive
+fields rather than pooling over image halves -- the same conclusion the looming
+work reached from its own direction.
+
 Outputs (files/maze/, gitignored): trajectories.png
 """
 import os
@@ -70,8 +83,22 @@ WEIGHT_SCALE = 0.0015
 GAIN = float(os.environ.get("M6_GAIN", "400"))
 CRUISE_SPEED = 1.2           # m/s
 TURN_GAIN = float(os.environ.get("TURN_GAIN", "8.0"))
-BRAKE_GAIN = 2.5             # how hard the looming magnitude slows the drone
-DURATION_S = 40.0
+# Absolute, and heavy on purpose. The proximity channel sits near its ceiling
+# for most of a flight (median 0.404 against a ceiling of 0.5), so this brake is
+# fully on in about 70% of frames and the drone crawls. That looks like a bug
+# and is in fact the mechanism: the centring signal needs TIME to swing the
+# drone around a corner, because nothing here sees the wall ahead -- it sits at
+# the focus of expansion where image motion is zero (see
+# encode_to_drive_centring).
+#
+# Measured by replacing it with a baseline-subtracting adaptive brake so the
+# drone keeps its speed: it covers more ground per second and then crashes --
+# 692 to 784 contact frames against 0 with this one. Turning harder does not
+# rescue it either (TURN_GAIN 20 -> 691 contacts, 45 -> unstable at 1040).
+# Slowing down in clutter is what makes the corner work, and it is what insects
+# do in clutter too.
+BRAKE_GAIN = float(os.environ.get("BRAKE_GAIN", "2.5"))
+DURATION_S = float(os.environ.get("DURATION_S", "120.0"))
 ALTITUDE = 1.2
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "files", "maze")

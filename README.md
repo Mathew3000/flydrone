@@ -185,8 +185,16 @@ zugleich flugfähig ist.
 **Freier Flug im Labyrinth (`scripts/m6_maze.py`):** Die Drohne fliegt
 selbstständig durch ein Labyrinth (`world.build_maze`, als ASCII-Karte
 definiert) und **nimmt die erste Kurve**, wo sie ungesteuert stur in die Wand
-fliegt. Null Wandkontakte über 40 s gegen 891 ohne Steuerung; mit umgekehrtem
-Vorzeichen zieht sie nach 1.8 m hinein.
+fliegt. In den ersten 40 s: null Wandkontakte gegen 891 ohne Steuerung; mit
+umgekehrtem Vorzeichen zieht sie schon nach 1.8 m hinein, das Vorzeichen trägt
+die Aussage also.
+
+**Über 120 s bleibt sie an der zweiten Ecke hängen** — die sauberen 40 s waren
+ein zu kurzes Fenster. Sie folgt dem Korridor nach der ersten Kurve nach Osten
+und läuft dann in die Wand bei (−1.2, −3.7). Das ist dieselbe Grenze wie oben:
+Zentrierung hält sie im Korridor, aber die Wand **voraus** sieht dieser Pfad
+nicht. Für ein vollständiges Labyrinth fehlt ein frontaler Nahbereichskanal —
+retinotope Rezeptivfelder statt Mittelung über Bildhälften.
 
 Welcher Auslesekanal das leistet, wurde gemessen, und der naheliegende verlor.
 Drive gegen Wandabstand im Korridorflug:
