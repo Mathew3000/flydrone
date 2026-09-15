@@ -216,6 +216,18 @@ das Bild um 2.9 Graustufen, ein Nicken um 44). Das ist die einzige
 Verhaltensaenderung am vendorten Simulator, im Unterschied zu den reinen
 Kompatibilitaets-Patches #1 und #2 -- siehe PATCHES.md.
 
+### Der Sehpfad ist zu langsam fuer die Innenschleife
+
+Kamera 33 ms + Decodierfenster 20 ms = rund 53 ms Latenz, gegen eine
+Rolldynamik, die `DSLPIDControl` mit 240 Hz daempft. Konsequenz, gemessen:
+im geschlossenen Kreis feuert der Roll-Kanal bei kalibriertem Gain gar nicht,
+weil der Regler die Stoerung in ~0.2 s (sechs Kamerabilder) erstickt. Derselbe
+Pfad liefert im Auslesetest bei 1.2 s Reizdauer ein sauberes Signal.
+
+Beim Interpretieren also immer fragen, ob der Reiz lange genug anliegt, um
+ueberhaupt durch dieses Fenster zu passen -- ein stummer Kanal heisst hier oft
+"zu kurz", nicht "nicht verdrahtet".
+
 ### Erst mitteln, dann rektifizieren
 
 Der teuerste Fehler dieses Projekts, in vier Varianten wiederholt: `clip()` vor

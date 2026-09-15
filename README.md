@@ -43,7 +43,7 @@ Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](d
 | M3 | Feintuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset) | ✅ erledigt (Gain pro Encoder kalibriert, Optomotorik-Reaktion nachgewiesen) |
 | M3b | Absteigende Neuronen als echte Ausgabeschicht | ✅ erledigt (T4/T5 → HS/H1/H2 → DNb03/DNg41/DNp15/DNp17/DNa02) |
 | M3c | Hassenstein-Reichardt-Korrelator statt optischem Fluss | ✅ erledigt (Temporalfrequenz-Tuning + Reverse-Phi nachgewiesen) |
-| M4 | Phase B, 4 Freiheitsgrade | ✅ Roll erledigt (T4/T5 → VS → DNp20 u. a.); Nicken nur in einer Richtung |
+| M4 | Phase B, 4 Freiheitsgrade | ⚠️ Pfad + Auslesetest erledigt; im Regelkreis trägt Roll **nicht** bei (Latenz, s. u.) |
 | M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ✅ erledigt (Winkelgrößen-Schwelle + Spezifität gegen Drehung, drei Kontrollen bei exakt 0) |
 
 **Aktuelles Ergebnis (M2, `scripts/m2_real_connectome.py`):** Die Drohne
@@ -161,6 +161,26 @@ Zwei Korrekturen waren dafür nötig:
   vendorten Simulator hart auf die Welt-Hochachse gesetzt; ein Roll um 46°
   änderte das Bild um 2.9 Graustufen, also gar nicht. Behoben als Patch #3,
   siehe [`PATCHES.md`](PATCHES.md).
+
+**Phase B im Regelkreis (`scripts/m4_closed_loop.py`):** Beide Teilnetze laufen
+zusammen — 27.244 Neuronen, 30 Hz, auf einer fliegenden Drohne. Das Konnektom
+liefert Sollwerte auf allen vier Kanälen, die Drohne bleibt oben.
+
+**Der Roll-Kanal trägt im Flug aber nichts bei.** Bei kalibriertem Gain feuert
+er nie; auf das 20-fache gezwungen erreicht er eine Korrelation von 0.21 mit
+der tatsächlichen Drehrate. Die Ursache ist nicht das Konnektom, sondern die
+Taktrate: `DSLPIDControl` drückt die Störung auf 0.110 rad und erstickt den
+Transienten in ~0.2 s — etwa **sechs Kamerabilder**. Ein 30-Hz-Bildtakt mit
+20-ms-Decodierfenster (zusammen ~53 ms Latenz) hat auf dieser Zeitskala keine
+Auflösung mehr. Im Auslesetest, wo die Drehung 1.2 s lang anliegt, liefert
+derselbe Pfad ein sauberes umkehrendes Signal.
+
+Den PD-Regler *ersetzen* — die andere Lesart von Phase B — ist damit ebenfalls
+nicht erreichbar, und das ist gemessen statt vermutet: senkt man
+`D_COEFF_TOR[0]`, bleibt die Rollachse bis 11000 praktisch unbewegt (0.163 rad)
+und überschlägt sich ab 10000. Der Übergang ist eine Bifurkation, kein Verlauf
+— es gibt kein Regime, in dem die Achse lose genug für ein visuelles Signal und
+zugleich flugfähig ist.
 
 ## Voraussetzungen
 
