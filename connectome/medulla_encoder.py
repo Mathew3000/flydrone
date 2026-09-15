@@ -153,3 +153,56 @@ def encode_to_drive_hemifield(
     if idx_r is not None and len(idx_r):
         drive[idx_r] = gain * right_energy
     return drive
+
+def encode_to_drive_progressive(
+    frame_prev: np.ndarray,
+    frame_curr: np.ndarray,
+    n_neurons: int,
+    cell_type_indices: dict[str, np.ndarray],
+    gain: float = 1.0,
+) -> np.ndarray:
+    """Direction-selective variant of encode_to_drive_hemifield().
+
+    encode_to_drive_hemifield() feeds each hemifield the mean of |flow|, which
+    discards the sign of horizontal motion -- and the sign is the entire
+    stimulus in an optomotor experiment. Measured on a rotating drum
+    (scripts/m3_optomotor.py): the signed horizontal flow swings cleanly from
+    -1.14/-1.02 (drum CCW) to +0.99/+1.16 (drum CW), while the |flow| the
+    encoder actually used barely moved (0.94/0.69 vs 0.66/1.06, and that
+    residual difference tracks scene asymmetry, not drum direction). The
+    connectome consequently could not distinguish the two directions at all.
+
+    This version keeps the anatomical hemifield mapping intact and adds the
+    selectivity where the fly has it. Horizontal-system cells in one optic lobe
+    are selective for PROGRESSIVE (front-to-back) motion across that eye, so:
+
+        visual_L  <- front-to-back motion in the left half of the image
+        visual_R  <- front-to-back motion in the right half
+
+    With a forward-looking camera, "front" is the image centre and "back" is
+    the outer edge, so front-to-back is leftward (dx < 0) on the left and
+    rightward (dx > 0) on the right. A body or drum rotation therefore
+    excites exactly one side -- which is the asymmetry the motor decoder's
+    left-minus-right already reads -- while pure forward translation excites
+    both equally and cancels in yaw, as it should.
+
+    Rectified (negative values clipped to zero) rather than signed, because
+    LIFNetwork drive is a current into a population whose firing rate cannot go
+    below zero; the opposing direction is represented by the other side's
+    population, not by negative drive on this one.
+    """
+    drive = np.zeros(n_neurons, dtype=np.float64)
+    flow = optical_flow(frame_prev, frame_curr)
+    mid = flow.shape[1] // 2
+    dx_left, dx_right = flow[:, :mid, 0], flow[:, mid:, 0]
+
+    left_energy = float(np.mean(np.clip(-dx_left, 0, None)))
+    right_energy = float(np.mean(np.clip(dx_right, 0, None)))
+
+    idx_l = cell_type_indices.get("visual_L")
+    idx_r = cell_type_indices.get("visual_R")
+    if idx_l is not None and len(idx_l):
+        drive[idx_l] = gain * left_energy
+    if idx_r is not None and len(idx_r):
+        drive[idx_r] = gain * right_energy
+    return drive
