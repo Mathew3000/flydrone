@@ -167,6 +167,38 @@ Ein zu niedriger Massstab sieht aus wie ein kaputter Pfad, ein zu hoher wie
 Saettigung -- beide liefern ein sauberes Null-Ergebnis. `test_optomotor.py`
 haelt den Wert deshalb von beiden Seiten fest.
 
+### Drei Encoder, und der Unterschied ist nicht kosmetisch
+
+- `encode_to_drive_hemifield` -- `|flow|`, wirft die Richtung weg. Nur fuer den
+  M2-Pfad und die alten Tests da.
+- `encode_to_drive_progressive` -- Farneback-Fluss, richtungsselektiv, misst
+  Geschwindigkeit.
+- `encode_to_drive_reichardt` -- Korrelations-Detektor. Sein Optimum liegt bei
+  fester Temporalfrequenz (0.25 Zyklen/Frame bei einem Frame Verzoegerung),
+  unabhaengig von der Streifenbreite -- die Fliegen-Signatur, die ein
+  Geschwindigkeitsschaetzer prinzipiell nicht haben kann. Gains sind pro
+  Encoder verschieden: progressive 1.0-4.0, reichardt ~10 (seine Ausgabe ist
+  eine Groessenordnung kleiner, weil sie ein Produkt zweier Kontraste ist).
+
+Praktische Folgen beim Interpretieren von Ergebnissen:
+- Reize oberhalb von ~5 px Verschiebung pro Bild verlassen den Bereich, in dem
+  Farneback (winsize=9) zuverlaessig schaetzt; die Antwort faellt dann ab.
+- Laeuft ein periodisches Muster mehr als einen halben Balken pro Bild weiter,
+  **kippt das Vorzeichen** (gemessen bei 24 Streifen / 4.8 rad/s). Das sieht wie
+  eine Reaktion in die Gegenrichtung aus und ist reines Sampling-Artefakt.
+- Tuning-Aussagen brauchen einen Reiz mit **einer** Ortsfrequenz. Die
+  rotierende Trommel hat keine: ihre Balkenperiode in Pixeln variiert ueber das
+  Blickfeld, und der Mosaikboden ist breitbandig und steht still. Der
+  Trommel-Sweep kam deshalb flach und nicht entscheidbar heraus; die belastbare
+  Messung steht in `test_optomotor.py` gegen ein Sinusgitter.
+- Ein argmax auf einer flachen Kurve ist kein Maximum. Erst die Flachheit
+  pruefen (`m3_tuning_curve.py` gibt sie aus), dann interpretieren -- argmax
+  und Schwerpunkt wanderten hier um mehr als Faktor zwei auseinander.
+- Die DN-Schicht hat ein enges Fenster: bei Gain 1.0 antwortet sie nur auf 2 von
+  6 Geschwindigkeiten, bei Gain 4.0 auf 6 von 6. Ein stummer Messpunkt heisst
+  also nicht "kein Reiz", sondern oft "unter der Feuerschwelle" -- vor jeder
+  Aussage ueber Tuning den Encoder-Drive getrennt mitmessen.
+
 ### Kalibrierung ist der empfindliche Teil
 
 - `GAIN` skaliert den **Encoder-Input**. 8.0 stammt vom Spielzeugnetz und gilt

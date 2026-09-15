@@ -206,3 +206,86 @@ def encode_to_drive_progressive(
     if idx_r is not None and len(idx_r):
         drive[idx_r] = gain * right_energy
     return drive
+
+
+def reichardt_response(frame_prev: np.ndarray, frame_curr: np.ndarray,
+                       spacing: int = 2, blur_sigma: float = 1.0) -> np.ndarray:
+    """Elementary motion detector of the Hassenstein-Reichardt type.
+
+    The other encoders in this module hand the network a velocity estimate
+    computed by Farneback optical flow. That is an algorithm standing in for
+    the very computation T4/T5 are famous for, and it has a measurable
+    consequence: the pipeline comes out tuned to image VELOCITY, where real
+    flies are tuned to TEMPORAL FREQUENCY (measured in
+    scripts/m3_tuning_curve.py -- 12 and 24 bars peak at the same 0.6 rad/s
+    rather than at the same Hz).
+
+    A correlation detector has that property by construction. It multiplies a
+    delayed signal from one sampling point with the undelayed signal from its
+    neighbour, and subtracts the mirror-image pairing:
+
+        resp = c(x, t-D) * c(x+s, t)  -  c(x, t) * c(x+s, t-D)
+
+    For a drifting grating of spatial frequency k and velocity v this evaluates
+    to  resp ~ sin(k*s) * sin(k*v*D), so the response peaks when k*v*D = pi/2,
+    i.e. at temporal frequency f = 1/(4D) -- independent of k, hence
+    independent of bar width. sin(k*s) only sets the amplitude. That is exactly
+    the fly signature the flow-based encoders cannot produce.
+
+    The delay D is fixed here at one camera frame (1/30 s), which puts the
+    predicted optimum at 7.5 Hz. Making D a free parameter would need the
+    detector to carry state between calls (a low-pass filter), and therefore a
+    stateful object rather than the two-frame signature the rest of this module
+    and all its call sites use. Fixed D is the honest, minimal version: it
+    tests the tuning claim without restructuring the pipeline.
+
+    Returns a signed (H, W-spacing) array; positive means rightward motion.
+    Magnitude scales with contrast SQUARED -- a multiplication, not a
+    normalised estimate -- so it is not contrast-invariant. Real flies largely
+    are, via adaptation this model does not have.
+    """
+    def contrast(f):
+        g = f[..., :3].astype(np.uint8) if (f.ndim == 3 and f.shape[2] >= 3) else f.astype(np.uint8)
+        g = cv2.cvtColor(g, cv2.COLOR_RGB2GRAY) if g.ndim == 3 else g
+        g = cv2.GaussianBlur(g.astype(np.float64), (0, 0), blur_sigma)  # optics blur
+        return (g - g.mean()) / 128.0   # contrast, not luminance: the product of two
+                                        # positive luminances is dominated by its DC term
+
+    c_prev, c_curr = contrast(frame_prev), contrast(frame_curr)
+    s = spacing
+    return c_prev[:, :-s] * c_curr[:, s:] - c_curr[:, :-s] * c_prev[:, s:]
+
+
+def encode_to_drive_reichardt(
+    frame_prev: np.ndarray,
+    frame_curr: np.ndarray,
+    n_neurons: int,
+    cell_type_indices: dict[str, np.ndarray],
+    gain: float = 1.0,
+    spacing: int = 2,
+) -> np.ndarray:
+    """Drop-in replacement for encode_to_drive_progressive() built on
+    reichardt_response() instead of Farneback flow.
+
+    Identical anatomy: each hemifield's population is driven by progressive
+    (front-to-back) motion across its own eye, rectified, so one drum direction
+    excites exactly one side. Only the motion measurement underneath differs --
+    which is the whole point, since that is where the velocity-versus-temporal-
+    frequency question lives.
+    """
+    drive = np.zeros(n_neurons, dtype=np.float64)
+    resp = reichardt_response(frame_prev, frame_curr, spacing=spacing)
+    mid = resp.shape[1] // 2
+
+    # front-to-back is leftward (negative) on the left, rightward (positive) on
+    # the right -- same convention as encode_to_drive_progressive()
+    left_energy = float(np.mean(np.clip(-resp[:, :mid], 0, None)))
+    right_energy = float(np.mean(np.clip(resp[:, mid:], 0, None)))
+
+    idx_l = cell_type_indices.get("visual_L")
+    idx_r = cell_type_indices.get("visual_R")
+    if idx_l is not None and len(idx_l):
+        drive[idx_l] = gain * left_energy
+    if idx_r is not None and len(idx_r):
+        drive[idx_r] = gain * right_energy
+    return drive

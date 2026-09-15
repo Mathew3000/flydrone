@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from connectome.local_maleCNS import (local_fetch_lr_subnetwork, local_fetch_dn_subnetwork,
                                       DATA_DIR_DEFAULT, WEIGHTS_FILE)
 from connectome.lif_network import LIFNetwork, scale_incoming
-from connectome.medulla_encoder import encode_to_drive_progressive
+from connectome.medulla_encoder import encode_to_drive_progressive, reichardt_response
 from connectome import motor_decoder as md
 
 GAIN = 1.0        # calibrated in scripts/m3_gain_sweep.py against the drum stimulus
@@ -217,4 +217,72 @@ def test_dn_layer_is_direction_selective():
     assert min(abs(yaw_left.mean()), abs(yaw_right.mean())) > 0.002, (
         f"DN response too weak -- check DN_SCALE (leftward {yaw_left.mean():+.5f}, "
         f"rightward {yaw_right.mean():+.5f})"
+    )
+
+
+def make_grating(period_px, phase_px, size=(48, 64)):
+    """Sinusoidal grating shifted by `phase_px`, as an RGB frame.
+
+    A single spatial frequency on purpose: the tuning claim below is about how
+    the response depends on spatial and temporal frequency, and that can only
+    be read off a stimulus that has one of each. The rotating drum in
+    scripts/m3_tuning_curve.py does not -- its bar period in pixels varies
+    across the field of view and the mosaic floor is broadband -- which is
+    exactly why the drum sweep there comes out too smeared to adjudicate this.
+    """
+    h, w = size
+    x = np.arange(w)
+    row = 128 + 100 * np.sin(2 * np.pi * (x - phase_px) / period_px)
+    img = np.repeat(row[None, :], h, axis=0)
+    return np.stack([img] * 3, axis=-1)
+
+
+def test_reichardt_is_tuned_to_temporal_frequency_not_velocity():
+    """The property the flow-based encoders cannot have.
+
+    A correlation detector responds to  sin(k*s) * sin(k*v*D), so its optimum
+    sits at a fixed temporal frequency (k*v*D = pi/2, i.e. 0.25 cycles per
+    frame at a one-frame delay) regardless of spatial frequency. An optic-flow
+    estimator measures v directly and peaks at a fixed velocity instead.
+
+    Doubling the grating period must therefore double the optimal drift speed
+    while leaving the optimal temporal frequency where it was. That is the
+    fly's signature (Goetz) and the whole reason this encoder exists.
+    """
+    drifts = np.array([0.5, 1, 2, 3, 4, 6, 8])
+    peaks = {}
+    for period in (16, 32):
+        resp = [abs(float(np.mean(reichardt_response(make_grating(period, 0.0),
+                                                     make_grating(period, d)))))
+                for d in drifts]
+        peaks[period] = drifts[int(np.argmax(resp))]
+
+    assert peaks[32] == 2 * peaks[16], (
+        f"doubling the period must double the optimal drift speed "
+        f"(got {peaks[16]} px/frame at period 16, {peaks[32]} at period 32)"
+    )
+    for period, drift in peaks.items():
+        cycles_per_frame = drift / period
+        assert abs(cycles_per_frame - 0.25) < 0.06, (
+            f"period {period}: optimum at {cycles_per_frame:.3f} cycles/frame, "
+            "expected ~0.25 for a one-frame correlation delay"
+        )
+
+
+def test_reichardt_reverses_above_nyquist():
+    """Aliasing is a real property here, not a bug to be papered over.
+
+    Past 0.5 cycles per frame a periodic pattern is indistinguishable from one
+    drifting the other way, and the correlator reports the reversed direction.
+    Real flies show the same inversion (reverse-phi). It matters for reading
+    results: scripts/m3_tuning_curve.py sees it on the drum at 24 bars, and a
+    reversed response there is a sampling artefact, not a behavioural finding.
+    """
+    period = 16
+    below = float(np.mean(reichardt_response(make_grating(period, 0.0),
+                                             make_grating(period, 4.0))))    # 0.25 cyc/frame
+    above = float(np.mean(reichardt_response(make_grating(period, 0.0),
+                                             make_grating(period, 12.0))))   # 0.75 cyc/frame
+    assert below * above < 0, (
+        f"response must reverse above the Nyquist rate (below {below:+.4f}, above {above:+.4f})"
     )

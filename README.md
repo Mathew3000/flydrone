@@ -42,6 +42,7 @@ Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](d
 | M2 | Geschlossener Regelkreis, Phase A (Gier + Höhe) | ✅ erledigt (synthetisch + echtes Konnektom) |
 | M3 | Feintuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset) | ✅ erledigt (Gain pro Encoder kalibriert, Optomotorik-Reaktion nachgewiesen) |
 | M3b | Absteigende Neuronen als echte Ausgabeschicht | ✅ erledigt (T4/T5 → HS/H1/H2 → DNb03/DNg41/DNp15/DNp17/DNa02) |
+| M3c | Hassenstein-Reichardt-Korrelator statt optischem Fluss | ✅ erledigt (Temporalfrequenz-Tuning + Reverse-Phi nachgewiesen) |
 | M4 | Phase B, 4 Freiheitsgrade | ⏳ offen (VS-Zellen fehlen in MaleCNS unter dem Namen — erst Typ-Recherche nötig) |
 | M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ⏳ offen |
 
@@ -69,6 +70,37 @@ tragen, wurde gemessen statt geraten: **DNg41** ist mit Abstand am stärksten
 kanonische Lenk-DN der Literatur — bleibt in diesem Modell stumm**, weil es nur
 Gewicht 182 aus HS bekommt gegen DNg41s 1166; sein übriger Eingang liegt
 außerhalb dieses Teilnetzes.
+
+**Bewegungsdetektion (M3c):** Die Richtungsselektivität entstand ursprünglich
+gar nicht im Konnektom, sondern in `medulla_encoder` durch Farnebacks optischen
+Fluss — ein Algorithmus an genau der Stelle, für die T4/T5 berühmt sind.
+`encode_to_drive_reichardt()` ersetzt ihn durch einen
+Hassenstein-Reichardt-Korrelator: ein verzögertes Signal wird mit dem
+unverzögerten des Nachbarpunkts multipliziert, die spiegelbildliche Paarung
+abgezogen. Für ein driftendes Gitter ergibt das `resp ∝ sin(k·s)·sin(k·v·Δ)`,
+das Maximum liegt also bei fester *Temporalfrequenz* unabhängig von der
+Streifenbreite — die Signatur echter Fliegen (Götz), die ein
+Geschwindigkeitsschätzer prinzipiell nicht haben kann.
+
+Kontrolliert nachgewiesen (`connectome/tests/test_optomotor.py`): bei Perioden
+von 16 und 32 px liegt das Optimum in beiden Fällen bei **0.25 Zyklen/Frame**,
+also bei doppelter Driftgeschwindigkeit für die doppelte Periode. Oberhalb von
+0.5 Zyklen/Frame kehrt sich das Vorzeichen um — Reverse-Phi, das Fliegen
+ebenfalls zeigen.
+
+Am rotierenden Trommelreiz (`scripts/m3_tuning_curve.py`) ist die Frage
+dagegen **nicht entscheidbar**: die Antwortkurven sind flach, argmax und
+Schwerpunkt widersprechen sich, und eine Trommel ist keine einzelne
+Ortsfrequenz — die Balkenperiode in Pixeln variiert über das Blickfeld und der
+Mosaikboden ist breitbandig und steht still. Was der Sweep klar zeigt: der
+Korrelator liefert einen glatten, monotonen Drive bis zu seinem Optimum, wo
+Farneback oberhalb von ~5 px Verschiebung pro Bild erratisch wird und
+schließlich kippt.
+
+Nebenbefund: bei 24 Streifen und 4.8 rad/s **kehrt sich das Vorzeichen um** —
+die Trommel läuft dann mehr als einen halben Balken pro Bild weiter, klassisches
+Bewegungs-Aliasing. Das Skript markiert diesen Punkt vorab als `ALIASED`, damit
+er nicht als Abstimmung missgedeutet wird.
 
 Nötig dafür war ein richtungsselektiver Encoder
 (`encode_to_drive_progressive`); mit dem älteren `encode_to_drive_hemifield`,
@@ -123,6 +155,7 @@ Drohnensicht).
 | `scripts/preview_room.py` | rendert den Raum von außen + aus Drohnensicht nach `files/room/` | -- |
 | `scripts/m3_optomotor.py` | Optomotorik-Experiment: rotierende Streifentrommel, beide Encoder im Vergleich; schreibt `files/optomotor/flight.mp4` + `response.png` | **echtes MaleCNS-Konnektom** |
 | `scripts/m3_gain_sweep.py` | Gain-Kalibrierung gegen den Trommelreiz (`SWEEP_GAINS=`, `M3_ENCODER=`) | **echtes MaleCNS-Konnektom** |
+| `scripts/m3_tuning_curve.py` | Tuningkurve: Geschwindigkeit vs. Temporalfrequenz, zwei Streifenzahlen | **echtes MaleCNS-Konnektom** |
 
 Alle Skripte mit `PYTHONPATH=simulator` ausführen, z. B.:
 

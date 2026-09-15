@@ -70,12 +70,14 @@ from connectome.local_maleCNS import (local_fetch_lr_subnetwork,
                                       local_fetch_dn_subnetwork)
 from connectome.lif_network import LIFNetwork, scale_incoming
 from connectome.medulla_encoder import (encode_to_drive_hemifield,
-                                        encode_to_drive_progressive)
+                                        encode_to_drive_progressive,
+                                        encode_to_drive_reichardt)
 from connectome import motor_decoder as md
 from world.room import build_drum, rotate_drum
 
 ENCODERS = {"hemifield": encode_to_drive_hemifield,
-            "progressive": encode_to_drive_progressive}
+            "progressive": encode_to_drive_progressive,
+            "reichardt": encode_to_drive_reichardt}
 
 PHYSICS_HZ = 240
 CAMERA_HZ = 30
