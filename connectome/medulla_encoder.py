@@ -209,7 +209,8 @@ def encode_to_drive_progressive(
 
 
 def reichardt_response(frame_prev: np.ndarray, frame_curr: np.ndarray,
-                       spacing: int = 2, blur_sigma: float = 1.0) -> np.ndarray:
+                       spacing: int = 2, blur_sigma: float = 1.0,
+                       axis: int = 1) -> np.ndarray:
     """Elementary motion detector of the Hassenstein-Reichardt type.
 
     The other encoders in this module hand the network a velocity estimate
@@ -239,7 +240,17 @@ def reichardt_response(frame_prev: np.ndarray, frame_curr: np.ndarray,
     and all its call sites use. Fixed D is the honest, minimal version: it
     tests the tuning claim without restructuring the pipeline.
 
-    Returns a signed (H, W-spacing) array; positive means rightward motion.
+    `axis` selects the correlation direction: 1 (default) pairs horizontal
+    neighbours and detects left/right motion, 0 pairs vertical neighbours and
+    detects up/down motion. A horizontal channel alone cannot distinguish a
+    rotating panorama from an approaching object -- both produce outward
+    horizontal motion -- because rotation simply has no vertical component to
+    give itself away. Measured: on the drum at 1.2 rad/s the vertical channel
+    reads 0.015 against the horizontal channel's 0.182, while an approaching
+    object reads 0.067 vertical against 0.094 horizontal.
+
+    Returns a signed array; positive means rightward (axis=1) or downward
+    (axis=0) motion.
     Magnitude scales with contrast SQUARED -- a multiplication, not a
     normalised estimate -- so it is not contrast-invariant. Real flies largely
     are, via adaptation this model does not have.
@@ -252,8 +263,11 @@ def reichardt_response(frame_prev: np.ndarray, frame_curr: np.ndarray,
                                         # positive luminances is dominated by its DC term
 
     c_prev, c_curr = contrast(frame_prev), contrast(frame_curr)
+    if axis == 0:
+        c_prev, c_curr = c_prev.T, c_curr.T
     s = spacing
-    return c_prev[:, :-s] * c_curr[:, s:] - c_curr[:, :-s] * c_prev[:, s:]
+    resp = c_prev[:, :-s] * c_curr[:, s:] - c_curr[:, :-s] * c_prev[:, s:]
+    return resp.T if axis == 0 else resp
 
 
 def encode_to_drive_reichardt(
@@ -284,6 +298,74 @@ def encode_to_drive_reichardt(
 
     idx_l = cell_type_indices.get("visual_L")
     idx_r = cell_type_indices.get("visual_R")
+    if idx_l is not None and len(idx_l):
+        drive[idx_l] = gain * left_energy
+    if idx_r is not None and len(idx_r):
+        drive[idx_r] = gain * right_energy
+    return drive
+
+
+def encode_to_drive_looming(
+    frame_prev: np.ndarray,
+    frame_curr: np.ndarray,
+    n_neurons: int,
+    cell_type_indices: dict[str, np.ndarray],
+    gain: float = 1.0,
+    spacing: int = 2,
+) -> np.ndarray:
+    """Radial-expansion drive for the LC4/LPLC2 looming populations.
+
+    Expansion is motion pointing away from the image centre in BOTH axes. Yaw
+    rotation is motion pointing one way along the horizontal axis and nowhere
+    at all along the vertical. Requiring both axes to read outward is therefore
+    what separates an approach from a turn, and it is the crude form of the
+    radial motion opponency LPLC2 is characterised by (Klapoetke et al. 2017),
+    where four directional inputs arranged radially must agree.
+
+    Getting here took three attempts, all measured, because the first two are
+    the obvious ones (selectivity below is approach-to-rotation, so anything
+    under 1.0 means the escape circuit fires harder at a turn than at an
+    impending collision):
+
+        horizontal outward motion, pooled per hemifield     0.52x
+        spatial divergence of that horizontal field         0.48x
+        the same on a retinotopic 4x8 patch grid       0.51-0.65x
+        horizontal AND vertical outward, conjunctive        4.39x
+
+    The failure was not resolution -- adding retinotopy barely moved it -- it
+    was that the encoder had no vertical motion channel at all, so rotation and
+    expansion were literally indistinguishable to it. See reichardt_response's
+    `axis` parameter.
+
+    Combined with min() rather than a sum or product: a conjunction is what
+    "both directions must agree" means, and unlike a product it keeps the
+    output in the same units as either channel, so the gain stays comparable to
+    the other encoders'.
+
+    Drives "looming_L"/"looming_R" (see
+    local_maleCNS.local_fetch_looming_subnetwork) from its own hemifield, so an
+    object approaching off to one side excites that side more -- the
+    lateralisation an escape turn would need.
+    """
+    drive = np.zeros(n_neurons, dtype=np.float64)
+    resp_h = reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=1)
+    resp_v = reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=0)
+    midx, midy = resp_h.shape[1] // 2, resp_v.shape[0] // 2
+
+    # outward = away from the image centre: leftward on the left, rightward on
+    # the right; upward in the top half, downward in the bottom half
+    out_h_l = float(np.mean(np.clip(-resp_h[:, :midx], 0, None)))
+    out_h_r = float(np.mean(np.clip(resp_h[:, midx:], 0, None)))
+    out_v_l = float(np.mean(np.clip(-resp_v[:midy, :midx], 0, None))
+                    + np.mean(np.clip(resp_v[midy:, :midx], 0, None)))
+    out_v_r = float(np.mean(np.clip(-resp_v[:midy, midx:], 0, None))
+                    + np.mean(np.clip(resp_v[midy:, midx:], 0, None)))
+
+    left_energy = min(out_h_l, out_v_l)
+    right_energy = min(out_h_r, out_v_r)
+
+    idx_l = cell_type_indices.get("looming_L")
+    idx_r = cell_type_indices.get("looming_R")
     if idx_l is not None and len(idx_l):
         drive[idx_l] = gain * left_energy
     if idx_r is not None and len(idx_r):

@@ -44,7 +44,7 @@ Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](d
 | M3b | Absteigende Neuronen als echte Ausgabeschicht | ✅ erledigt (T4/T5 → HS/H1/H2 → DNb03/DNg41/DNp15/DNp17/DNa02) |
 | M3c | Hassenstein-Reichardt-Korrelator statt optischem Fluss | ✅ erledigt (Temporalfrequenz-Tuning + Reverse-Phi nachgewiesen) |
 | M4 | Phase B, 4 Freiheitsgrade | ⏳ offen (VS-Zellen fehlen in MaleCNS unter dem Namen — erst Typ-Recherche nötig) |
-| M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ⏳ offen |
+| M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ⚠️ teilweise (Pfad verdrahtet, Winkelgrößen-Schwelle reproduziert; Spezifität gegen Drehung **nicht** erreicht) |
 
 **Aktuelles Ergebnis (M2, `scripts/m2_real_connectome.py`):** Die Drohne
 hält mit dem echten MaleCNS-Konnektom (T4/T5 -> HS/H1/H2, 13.597 Neuronen,
@@ -106,6 +106,26 @@ Nötig dafür war ein richtungsselektiver Encoder
 (`encode_to_drive_progressive`); mit dem älteren `encode_to_drive_hemifield`,
 der `|flow|` benutzt und damit das Vorzeichen der Bewegung wegwirft, gibt es
 keine messbare Reaktion — beide Varianten stehen als Vergleich im Skript.
+
+**Looming-Pfad (M5, `scripts/m5_looming.py`):** LC4/LPLC2 → Fluchtneuronen
+(DNp01/Giant Fiber, DNp04 u. a.) ist im Konnektom kräftiger verdrahtet als der
+Kurskontrollpfad — Gewicht 14995 gegen 1266. Beim Anflug feuert die Schicht
+einen **Transienten** (5 von 62 Bildern), und beide Anfluggeschwindigkeiten
+peaken bei derselben **Winkelgröße** (34.7° bzw. 33.4°), nicht bei derselben
+Zeit oder Distanz — die klassische Beschreibung der Giant-Fiber-Auslösung, hier
+ohne Tuning aus Detektor und Geometrie entstanden.
+
+**Nicht erreicht: Spezifität.** Vier Encoder-Varianten gemessen
+(Verhältnis Anflug zu Drehung; unter 1.0 heißt, der Fluchtkreis feuert beim
+Drehen stärker als beim drohenden Aufprall): Auswärtsbewegung pro Bildhälfte
+0.52x, deren räumliche Divergenz 0.48x, dieselbe auf einem retinotopen
+4×8-Raster 0.65x, horizontal und vertikal konjunktiv 4.39x — letzteres aber
+konfundiert, weil die Drehkontrolle gestreift und das Anflugobjekt mosaikiert
+texturiert war. Bei gleicher Textur bleiben 1.5x. Der Test dazu steht als
+`xfail` in `connectome/tests/test_looming.py` und meldet sich, sobald jemand es
+löst. Nötig wäre ein Encoder, der das räumliche **Muster** der
+Bewegungsrichtung unterscheidet (bei Drehung gleichförmig, beim Anflug
+divergent) statt das Vorhandensein von Vertikalbewegung.
 
 ## Voraussetzungen
 

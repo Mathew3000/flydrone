@@ -282,3 +282,61 @@ def local_fetch_dn_subnetwork(
         cti[f"dn_{t}_R"] = np.where(t_mask & (sides == "R"))[0]
 
     return net
+
+
+# Data-driven like DEFAULT_DN_TYPES: the descending neurons that actually come
+# out of local_downstream_types(["LC4", "LPLC2"]) by weight, restricted to
+# bilateral pairs. DNp01 is the Giant Fiber. Note how much stronger this
+# pathway is than the course-control one -- LC4/LPLC2 -> DNp04 carries weight
+# 14995 and -> DNp01 11224, where the whole of HS/H1/H2 -> DNb03 manages 1266.
+# That asymmetry is the point of commit 1f09a4f's finding: this is an escape
+# reflex, built to fire hard and rarely, not to steer continuously.
+DEFAULT_ESCAPE_DN_TYPES = ["DNp01", "DNp04", "DNp02", "DNp11", "DNp03", "DNp06"]
+
+
+def local_fetch_looming_subnetwork(
+    looming_types: list[str] = ["LC4", "LPLC2"],
+    dn_types: list[str] | None = None,
+    data_dir: str = DATA_DIR_DEFAULT,
+) -> dict:
+    """Looming pathway: LC4/LPLC2 -> escape descending neurons.
+
+    The companion to local_fetch_dn_subnetwork(), which wires the optomotor
+    course-control pathway. Same shape, same conventions, different behaviour:
+    that one turns continuously in response to rotation, this one is expected
+    to do nothing at all until something approaches and then fire a transient.
+
+    cell_type_indices gains:
+      looming_L / looming_R    LC4+LPLC2 by somaSide -- the encoder's targets
+      motor_left / motor_right the escape DNs by somaSide, so the existing
+                               motor_decoder pools work unchanged
+      dn_<type>_L / dn_<type>_R  per DN type, to attribute a response rather
+                               than assume which neuron carries it (the same
+                               approach that found DNg41 rather than DNa02
+                               carrying the turning signal)
+    """
+    dn_types = list(DEFAULT_ESCAPE_DN_TYPES if dn_types is None else dn_types)
+    all_types = list(looming_types) + dn_types
+    net = local_fetch_subnetwork(all_types, data_dir=data_dir)
+
+    ann = load_annotations(data_dir, columns=("bodyId", "type", "somaSide"))
+    body_ids = resolve_type_ids(ann, all_types)
+    sides = ann.set_index("bodyId").loc[body_ids, "somaSide"].to_numpy()
+
+    def _mask_for(types):
+        mask = np.zeros(len(body_ids), dtype=bool)
+        for t in types:
+            mask |= np.isin(np.arange(len(body_ids)), net["cell_type_indices"][t])
+        return mask
+
+    cti = net["cell_type_indices"]
+    looming, motor = _mask_for(looming_types), _mask_for(dn_types)
+    cti["looming_L"] = np.where(looming & (sides == "L"))[0]
+    cti["looming_R"] = np.where(looming & (sides == "R"))[0]
+    cti["motor_left"] = np.where(motor & (sides == "L"))[0]
+    cti["motor_right"] = np.where(motor & (sides == "R"))[0]
+    for t in dn_types:
+        t_mask = _mask_for([t])
+        cti[f"dn_{t}_L"] = np.where(t_mask & (sides == "L"))[0]
+        cti[f"dn_{t}_R"] = np.where(t_mask & (sides == "R"))[0]
+    return net

@@ -223,3 +223,33 @@ def rotate_drum(client: int, drum: dict, angle: float) -> None:
             p.getQuaternionFromEuler([0, 0, theta]),
             physicsClientId=client,
         )
+
+
+def spawn_object(client: int, half_size: float = 0.5, position=(8.0, 0.0, 1.0),
+                 shade: float = BAR_DARK, textured: bool = True, seed: int = 7) -> int:
+    """A movable box, for looming stimuli. Returns its body id.
+
+    No collision shape: it is meant to be driven through space with
+    move_object() on a collision course with the drone, and a physical
+    collision would end the trial with a crash rather than a measurement. The
+    drone is supposed to see it, not be hit by it.
+
+    Textured by default so its surface carries motion as it expands. An
+    untextured box only produces flow at its silhouette edges, which for a
+    correlation detector sampling 2 px apart is a thin signal.
+    """
+    visual_kwargs = dict(halfExtents=[half_size] * 3, rgbaColor=[shade, shade, shade, 1.0])
+    visual = p.createVisualShape(p.GEOM_BOX, physicsClientId=client, **visual_kwargs)
+    body = p.createMultiBody(baseMass=0, baseVisualShapeIndex=visual,
+                             basePosition=list(position), physicsClientId=client)
+    if textured:
+        path = make_mosaic_texture(os.path.join(TEXTURE_DIR, f"object_{seed}.png"),
+                                   cells=8, seed=seed, low=60, high=255)
+        p.changeVisualShape(body, -1, textureUniqueId=p.loadTexture(path, physicsClientId=client),
+                            physicsClientId=client)
+    return body
+
+
+def move_object(client: int, body: int, position) -> None:
+    p.resetBasePositionAndOrientation(body, list(position), [0, 0, 0, 1],
+                                      physicsClientId=client)
