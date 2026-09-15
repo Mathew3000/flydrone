@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Was als naechstes zu tun ist, steht in [`docs/naechste-schritte.md`](docs/naechste-schritte.md)** --
+mit den Messwerten, die die Reihenfolge begruenden, und den Sackgassen, die nicht
+noch einmal durchprobiert werden muessen.
+
 ## Was das Projekt ist
 
 Ein echtes Fliegen-Konnektom (MaleCNS-Datensatz, LIF-Neuronen) steuert eine

@@ -376,4 +376,5 @@ eonsystems/fly-brain u. a.) sind im Projektplan verlinkt.
 
 - [`docs/projektplan.md`](docs/projektplan.md) -- vollständiger Projektplan, Architektur, Simulator-Evaluation
 - [`docs/connectome-data-access.md`](docs/connectome-data-access.md) -- Datenzugriff, Zelltyp-Recherche, Kalibrierungs-Historie
+- [`docs/naechste-schritte.md`](docs/naechste-schritte.md) -- Übergabe: nächste Schritte, begründet mit Messwerten, plus die durchprobierten Sackgassen
 - [`PATCHES.md`](PATCHES.md) -- Änderungen am vendorten Simulator-Code
