@@ -211,3 +211,74 @@ def local_fetch_lr_subnetwork(
     net["cell_type_indices"]["motor_left"] = np.where(course_mask & (sides == "L"))[0]
     net["cell_type_indices"]["motor_right"] = np.where(course_mask & (sides == "R"))[0]
     return net
+
+# Data-driven, not picked from the literature: these are the descending neurons
+# that actually appear downstream of HS/H1/H2 in this dataset, ranked by total
+# synaptic weight (local_downstream_types(["HSE","HSN","HSS","HST","H1","H2"])),
+# restricted to types with a clean bilateral pair so a left/right decode is
+# possible at all. DNa02 is the canonical steering DN of the literature and is
+# in here on its own merits -- it does receive HS input (weight 182) -- but it
+# is far from the strongest, which is exactly why the type list stays a
+# parameter and the optomotor script reports selectivity per DN type instead of
+# assuming which one carries the turning signal.
+DEFAULT_DN_TYPES = ["DNb03", "DNg41", "DNp15", "DNp17", "DNa02"]
+
+
+def local_fetch_dn_subnetwork(
+    visual_types: list[str] = ["T4.*", "T5.*"],
+    course_types: list[str] = ["HSE", "HSN", "HSS", "HST", "H1", "H2"],
+    dn_types: list[str] | None = None,
+    data_dir: str = DATA_DIR_DEFAULT,
+) -> dict:
+    """Three-layer subnetwork: T4/T5 -> HS/H1/H2 -> descending neurons.
+
+    Why this exists on top of local_fetch_lr_subnetwork(): that one decodes the
+    motor command straight off HS/H1/H2, which are lobula plate tangential
+    cells -- interneurons, not an output of the brain. Reading a "motor" signal
+    off them is a stand-in. Descending neurons are the real thing: they are the
+    brain's output to the ventral nerve cord, and the data shows HS/H1/H2 drive
+    a handful of them directly. Decoding there removes one layer of pretending
+    from the claim that the connectome drives the drone.
+
+    cell_type_indices gains, alongside the per-type keys:
+      visual_L / visual_R    T4/T5 by somaSide -- the encoder's drive targets
+      course_L / course_R    HS/H1/H2 by somaSide (what the two-layer version
+                             decoded from; kept so the layers can be compared)
+      motor_left / motor_right   the DNs by somaSide -- the new decode pools
+      dn_<type>_L / dn_<type>_R  each DN type separately, so direction
+                             selectivity can be attributed per type rather than
+                             assumed
+
+    Pools are small (1-6 neurons per side per type, 11 per side in total with
+    the default list) -- comparable to the 6 per side the HS/H1/H2 version
+    used, so decode noise should be of the same order, but it is worth checking
+    rather than assuming: see scripts/m3_gain_sweep.py.
+    """
+    dn_types = list(DEFAULT_DN_TYPES if dn_types is None else dn_types)
+    all_types = list(visual_types) + list(course_types) + dn_types
+    net = local_fetch_subnetwork(all_types, data_dir=data_dir)
+
+    ann = load_annotations(data_dir, columns=("bodyId", "type", "somaSide"))
+    body_ids = resolve_type_ids(ann, all_types)
+    sides = ann.set_index("bodyId").loc[body_ids, "somaSide"].to_numpy()
+
+    def _mask_for(types):
+        mask = np.zeros(len(body_ids), dtype=bool)
+        for t in types:
+            mask |= np.isin(np.arange(len(body_ids)), net["cell_type_indices"][t])
+        return mask
+
+    cti = net["cell_type_indices"]
+    visual, course, motor = _mask_for(visual_types), _mask_for(course_types), _mask_for(dn_types)
+    cti["visual_L"] = np.where(visual & (sides == "L"))[0]
+    cti["visual_R"] = np.where(visual & (sides == "R"))[0]
+    cti["course_L"] = np.where(course & (sides == "L"))[0]
+    cti["course_R"] = np.where(course & (sides == "R"))[0]
+    cti["motor_left"] = np.where(motor & (sides == "L"))[0]
+    cti["motor_right"] = np.where(motor & (sides == "R"))[0]
+    for t in dn_types:
+        t_mask = _mask_for([t])
+        cti[f"dn_{t}_L"] = np.where(t_mask & (sides == "L"))[0]
+        cti[f"dn_{t}_R"] = np.where(t_mask & (sides == "R"))[0]
+
+    return net

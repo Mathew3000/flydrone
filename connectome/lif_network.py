@@ -85,3 +85,31 @@ class LIFNetwork:
         counts = self.spike_count_window.copy()
         self.spike_count_window[:] = 0
         return counts
+
+
+def scale_incoming(weights, target_indices, factor: float):
+    """Multiply every synapse *onto* `target_indices` by `factor`.
+
+    Why a per-layer scale is needed at all: connectome weights are raw synapse
+    counts, and the LIF engine gives every neuron the same threshold and
+    membrane resistance, so a layer's operating point is set by its fan-in. In
+    the T4/T5 -> HS/H1/H2 -> DN network those differ by two orders of
+    magnitude: an HS cell integrates ~6800 visual neurons, a descending neuron
+    integrates 12 HS cells. The single WEIGHT_SCALE calibrated to keep HS out
+    of saturation therefore leaves the DNs at a steady-state membrane voltage
+    of roughly 0.1 against a threshold of 1.0 -- they never spike at any
+    encoder gain (measured: silent from gain 1.0 through 16.0).
+
+    Scaling the DN layer's inputs separately is the same statement as saying
+    descending neurons are more excitable, or have a lower threshold, than
+    tangential cells. It is a modelling choice the connectome does not make for
+    us -- the data gives connectivity, not biophysics -- and it should be
+    reported as such rather than buried.
+
+    Returns a new CSR matrix; the input is not modified. weights[post, pre], so
+    "incoming" means rows.
+    """
+    scaled = sp.lil_matrix(weights.shape, dtype=np.float64)
+    scaled[:] = weights
+    scaled[np.asarray(target_indices), :] = weights[np.asarray(target_indices), :] * factor
+    return sp.csr_matrix(scaled)
