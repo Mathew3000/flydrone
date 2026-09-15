@@ -43,7 +43,7 @@ Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](d
 | M3 | Feintuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset) | ✅ erledigt (Gain pro Encoder kalibriert, Optomotorik-Reaktion nachgewiesen) |
 | M3b | Absteigende Neuronen als echte Ausgabeschicht | ✅ erledigt (T4/T5 → HS/H1/H2 → DNb03/DNg41/DNp15/DNp17/DNa02) |
 | M3c | Hassenstein-Reichardt-Korrelator statt optischem Fluss | ✅ erledigt (Temporalfrequenz-Tuning + Reverse-Phi nachgewiesen) |
-| M4 | Phase B, 4 Freiheitsgrade | ⏳ offen (VS-Zellen fehlen in MaleCNS unter dem Namen — erst Typ-Recherche nötig) |
+| M4 | Phase B, 4 Freiheitsgrade | ✅ Roll erledigt (T4/T5 → VS → DNp20 u. a.); Nicken nur in einer Richtung |
 | M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ✅ erledigt (Winkelgrößen-Schwelle + Spezifität gegen Drehung, drei Kontrollen bei exakt 0) |
 
 **Aktuelles Ergebnis (M2, `scripts/m2_real_connectome.py`):** Die Drohne
@@ -136,6 +136,31 @@ Eigendrehung der Drohne (letztere schwenkt die ganze Szene inklusive des
 isotropen Mosaikbodens — die Trommelkontrolle allein würde nicht reichen, weil
 ein vertikales Gitter ein Reiz ist, auf dem man leicht aus den falschen Gründen
 selektiv aussieht).
+
+**Vertikales System (M4, `scripts/m4_vertical.py`):** Dieselbe Architektur eine
+Achse weiter — T4/T5 → **VS** → absteigende Neuronen (DNp20 u. a.), gespeist
+mit vertikaler statt horizontaler Bildbewegung. Ein neuer Decoder war nicht
+nötig: Rollen dreht die beiden Bildhälften gegensinnig, Nicken gleichsinnig,
+also trennen dieselbe Differenz und Summe die Kanäle, die auf der horizontalen
+Seite Gier und Schub tragen.
+
+Roll kehrt sauber um (+0.0122 gegen −0.0052 über je 3 Durchgänge,
+überlappungsfrei), und Gieren leckt **exakt 0** in den Roll-Kanal. Nicken
+landet wie erwartet im Summenkanal, aber nur in **einer** Richtung: jede
+Population ist rektifiziert und meldet nur Abwärtsbewegung, und `somaSide`
+liefert nur zwei Pools.
+
+Zwei Korrekturen waren dafür nötig:
+
+- **M4 war nie an fehlenden Daten blockiert, sondern an einer Regex.** MaleCNS
+  fasst alle acht VS-Subtypen unter dem einzigen Typnamen `VS` zusammen
+  (`flywireType` schreibt es aus: `VS1,…,VS8`); die frühere Suche nach `VS\d+`
+  verlangte eine Ziffer. 18 Zellen, 9 pro Seite, mit Gewicht 158.026 aus T4/T5
+  — 8779 pro VS-Zelle gegen 13.164 pro HS-Zelle.
+- **Die Drohnenkamera rollte nicht mit der Drohne.** `cameraUpVector` war im
+  vendorten Simulator hart auf die Welt-Hochachse gesetzt; ein Roll um 46°
+  änderte das Bild um 2.9 Graustufen, also gar nicht. Behoben als Patch #3,
+  siehe [`PATCHES.md`](PATCHES.md).
 
 ## Voraussetzungen
 

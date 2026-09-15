@@ -199,6 +199,23 @@ Praktische Folgen beim Interpretieren von Ergebnissen:
   also nicht "kein Reiz", sondern oft "unter der Feuerschwelle" -- vor jeder
   Aussage ueber Tuning den Encoder-Drive getrennt mitmessen.
 
+### Zelltypnamen in MaleCNS vor dem Aufgeben pruefen
+
+M4 galt eine Zeit lang als blockiert, weil `VS\d+` nichts fand. MaleCNS fasst
+alle acht Subtypen des vertikalen Systems unter dem Typnamen **`VS`** zusammen
+-- die Spalte `flywireType` schreibt es als `VS1,...,VS8` aus. Die Annotationen
+haben mehrere Namensfelder (`type`, `hemibrainType`, `flywireType`, `synonyms`,
+`supertype`); bei einer Fehlanzeige alle durchsuchen, bevor man einen Zelltyp
+fuer abwesend erklaert.
+
+### Die Drohnenkamera rollt erst seit Patch #3 mit
+
+`cameraUpVector` war in `_getDroneImages()` hart auf die Welt-Hochachse
+gesetzt, Roll war fuer die Kamera unsichtbar (gemessen: 46 Grad Roll aenderten
+das Bild um 2.9 Graustufen, ein Nicken um 44). Das ist die einzige
+Verhaltensaenderung am vendorten Simulator, im Unterschied zu den reinen
+Kompatibilitaets-Patches #1 und #2 -- siehe PATCHES.md.
+
 ### Erst mitteln, dann rektifizieren
 
 Der teuerste Fehler dieses Projekts, in vier Varianten wiederholt: `clip()` vor

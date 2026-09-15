@@ -340,3 +340,63 @@ def local_fetch_looming_subnetwork(
         cti[f"dn_{t}_L"] = np.where(t_mask & (sides == "L"))[0]
         cti[f"dn_{t}_R"] = np.where(t_mask & (sides == "R"))[0]
     return net
+
+
+# The vertical system's descending targets, from
+# local_downstream_types(["VS"]) by weight, bilateral pairs only.
+DEFAULT_VERTICAL_DN_TYPES = ["DNp20", "DNp17", "DNge043", "DNp53", "DNb06", "DNp22"]
+
+
+def local_fetch_vertical_subnetwork(
+    visual_types: list[str] = ["T4.*", "T5.*"],
+    vertical_types: list[str] = ["VS"],
+    dn_types: list[str] | None = None,
+    data_dir: str = DATA_DIR_DEFAULT,
+) -> dict:
+    """Vertical system: T4/T5 -> VS -> descending neurons. The roll/pitch
+    counterpart of local_fetch_dn_subnetwork()'s yaw pathway.
+
+    Finding VS at all took a correction. An earlier pass concluded the vertical
+    system was absent from MaleCNS because a search for `VS\\d+` returned
+    nothing, and M4 was marked blocked on that. The cells are there: MaleCNS
+    collapses all eight subtypes into a single type named exactly "VS", which
+    the annotations' flywireType column spells out as
+    "VS1,VS2,VS3,VS4,VS5,VS6,VS7,VS8". A regex demanding a digit could not
+    match it. 18 cells, 9 per side.
+
+    The pathway is real and not a curiosity: T4/T5 -> VS carries total synaptic
+    weight 158026, which is 8779 per VS cell against 13164 per HS cell -- the
+    same order, from the same input population.
+
+    cell_type_indices gains visual_L/visual_R (the encoder's targets),
+    vertical_L/vertical_R (the VS cells by somaSide) and motor_left/motor_right
+    (the descending neurons), plus dn_<type>_L/_R per type.
+    """
+    dn_types = list(DEFAULT_VERTICAL_DN_TYPES if dn_types is None else dn_types)
+    all_types = list(visual_types) + list(vertical_types) + dn_types
+    net = local_fetch_subnetwork(all_types, data_dir=data_dir)
+
+    ann = load_annotations(data_dir, columns=("bodyId", "type", "somaSide"))
+    body_ids = resolve_type_ids(ann, all_types)
+    sides = ann.set_index("bodyId").loc[body_ids, "somaSide"].to_numpy()
+
+    def _mask_for(types):
+        mask = np.zeros(len(body_ids), dtype=bool)
+        for t in types:
+            mask |= np.isin(np.arange(len(body_ids)), net["cell_type_indices"][t])
+        return mask
+
+    cti = net["cell_type_indices"]
+    visual, vertical, motor = (_mask_for(visual_types), _mask_for(vertical_types),
+                               _mask_for(dn_types))
+    cti["visual_L"] = np.where(visual & (sides == "L"))[0]
+    cti["visual_R"] = np.where(visual & (sides == "R"))[0]
+    cti["vertical_L"] = np.where(vertical & (sides == "L"))[0]
+    cti["vertical_R"] = np.where(vertical & (sides == "R"))[0]
+    cti["motor_left"] = np.where(motor & (sides == "L"))[0]
+    cti["motor_right"] = np.where(motor & (sides == "R"))[0]
+    for t in dn_types:
+        t_mask = _mask_for([t])
+        cti[f"dn_{t}_L"] = np.where(t_mask & (sides == "L"))[0]
+        cti[f"dn_{t}_R"] = np.where(t_mask & (sides == "R"))[0]
+    return net

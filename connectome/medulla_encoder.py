@@ -374,3 +374,53 @@ def encode_to_drive_looming(
     if idx_r is not None and len(idx_r):
         drive[idx_r] = gain * looming * 2.0 * frac_r
     return drive
+
+
+def encode_to_drive_vertical(
+    frame_prev: np.ndarray,
+    frame_curr: np.ndarray,
+    n_neurons: int,
+    cell_type_indices: dict[str, np.ndarray],
+    gain: float = 1.0,
+    spacing: int = 2,
+) -> np.ndarray:
+    """Vertical-motion drive for the VS populations -- the roll/pitch input.
+
+    The exact mirror of encode_to_drive_progressive(), one axis over: that one
+    feeds horizontal motion per hemifield into the horizontal system and the
+    decoder reads left-minus-right as yaw; this one feeds VERTICAL motion per
+    hemifield into the vertical system, where left-minus-right is roll and
+    left-plus-right is pitch.
+
+    Roll is a rotation about the drone's forward axis, so the two hemifields
+    see opposite vertical motion -- one side of the image sweeps up while the
+    other sweeps down. Pitch moves the whole field the same way. The existing
+    motor_decoder.lr_to_thrust_yaw() therefore already separates them: the
+    difference is roll, the sum is pitch, with no new decoder needed.
+
+    Pooled before rectification, per the lesson encode_to_drive_looming()
+    records the hard way: a clip() in front of a mean() destroys the
+    cancellation that opponent channels are built on, and it also gives any
+    noisy field a spurious positive mean.
+
+    One honest asymmetry: rectification means each population signals only
+    downward motion in its hemifield. Both ROLL directions are covered (they
+    excite opposite sides), but only one PITCH direction is -- nose-up sweeps
+    the field down and excites both, nose-down sweeps it up and excites
+    neither. Covering both would need a second pair of populations selective
+    for upward motion, and somaSide gives only two pools to work with.
+    """
+    drive = np.zeros(n_neurons, dtype=np.float64)
+    resp = reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=0)
+    mid = resp.shape[1] // 2
+
+    left_down = max(float(np.mean(resp[:, :mid])), 0.0)
+    right_down = max(float(np.mean(resp[:, mid:])), 0.0)
+
+    idx_l = cell_type_indices.get("vertical_L")
+    idx_r = cell_type_indices.get("vertical_R")
+    if idx_l is not None and len(idx_l):
+        drive[idx_l] = gain * left_down
+    if idx_r is not None and len(idx_r):
+        drive[idx_r] = gain * right_down
+    return drive

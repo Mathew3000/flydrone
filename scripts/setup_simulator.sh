@@ -43,4 +43,9 @@ patch_file simulator/gym_pybullet_drones/envs/VisionAviary.py \
   's/dtype=np\.int$/dtype=int/' \
   "PATCHES.md #2 (dtype=int)"
 
+# Patch 3 (see PATCHES.md #3): the drone camera's up vector follows the drone
+patch_file simulator/gym_pybullet_drones/envs/BaseAviary.py \
+  's/cameraUpVector=\[0, 0, 1\],/cameraUpVector=np.dot(rot_mat, np.array([0, 0, 1])),/' \
+  "PATCHES.md #3 (camera up vector follows the drone)"
+
 echo "Done. Now: pip install -r requirements.txt"
