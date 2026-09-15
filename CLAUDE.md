@@ -199,6 +199,31 @@ Praktische Folgen beim Interpretieren von Ergebnissen:
   also nicht "kein Reiz", sondern oft "unter der Feuerschwelle" -- vor jeder
   Aussage ueber Tuning den Encoder-Drive getrennt mitmessen.
 
+### Erst mitteln, dann rektifizieren
+
+Der teuerste Fehler dieses Projekts, in vier Varianten wiederholt: `clip()` vor
+`mean()`. Bei jeder Opponenz-Rechnung -- Links gegen Rechts, Auswaerts gegen
+Einwaerts -- zerstoert Rektifizierung pro Pixel die Aufhebung, auf der die
+Unterscheidung beruht. Der Looming-Detektor feuerte dadurch beim Drehen
+staerker als beim drohenden Aufprall (0.48x-0.65x), und keine Menge
+Retinotopie oder Zusatzkanaele hat das repariert. Erst das vorzeichenbehaftete
+Feld ueber die Bildmitte mitteln, dann rektifizieren -- damit liegt die
+Drehung bei exakt 0.
+
+Wer hier etwas aendert: `connectome/tests/test_looming.py` haelt das fest, und
+die Fehlermeldung nennt die Ursache beim Namen.
+
+### Kontrollbedingungen muessen die Textur teilen
+
+Eine Zwischenversion sah mit 4.39x nach der Loesung aus und war konfundiert:
+Drehkontrolle auf der gestreiften Trommel, Anflugobjekt mosaikiert. Ein
+vertikales Gitter hat keinen vertikalen Helligkeitsgradienten, der damals
+verwendete Vertikalkanal las darauf exakt 0.00000 -- bei Drehung wie bei
+Expansion. Der Vergleich trennte zwei Texturen, nicht zwei Bewegungen.
+
+Deshalb gibt es in `m5_looming.py` die self-yaw-Kontrolle: die Drohne dreht
+sich selbst, wodurch dieselbe Szene schwenkt, die beim Anflug stillsteht.
+
 ### Kalibrierung ist der empfindliche Teil
 
 - `GAIN` skaliert den **Encoder-Input**. 8.0 stammt vom Spielzeugnetz und gilt

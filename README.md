@@ -44,7 +44,7 @@ Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](d
 | M3b | Absteigende Neuronen als echte Ausgabeschicht | ✅ erledigt (T4/T5 → HS/H1/H2 → DNb03/DNg41/DNp15/DNp17/DNa02) |
 | M3c | Hassenstein-Reichardt-Korrelator statt optischem Fluss | ✅ erledigt (Temporalfrequenz-Tuning + Reverse-Phi nachgewiesen) |
 | M4 | Phase B, 4 Freiheitsgrade | ⏳ offen (VS-Zellen fehlen in MaleCNS unter dem Namen — erst Typ-Recherche nötig) |
-| M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ⚠️ teilweise (Pfad verdrahtet, Winkelgrößen-Schwelle reproduziert; Spezifität gegen Drehung **nicht** erreicht) |
+| M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ✅ erledigt (Winkelgrößen-Schwelle + Spezifität gegen Drehung, drei Kontrollen bei exakt 0) |
 
 **Aktuelles Ergebnis (M2, `scripts/m2_real_connectome.py`):** Die Drohne
 hält mit dem echten MaleCNS-Konnektom (T4/T5 -> HS/H1/H2, 13.597 Neuronen,
@@ -115,17 +115,27 @@ peaken bei derselben **Winkelgröße** (34.7° bzw. 33.4°), nicht bei derselben
 Zeit oder Distanz — die klassische Beschreibung der Giant-Fiber-Auslösung, hier
 ohne Tuning aus Detektor und Geometrie entstanden.
 
-**Nicht erreicht: Spezifität.** Vier Encoder-Varianten gemessen
-(Verhältnis Anflug zu Drehung; unter 1.0 heißt, der Fluchtkreis feuert beim
-Drehen stärker als beim drohenden Aufprall): Auswärtsbewegung pro Bildhälfte
-0.52x, deren räumliche Divergenz 0.48x, dieselbe auf einem retinotopen
-4×8-Raster 0.65x, horizontal und vertikal konjunktiv 4.39x — letzteres aber
-konfundiert, weil die Drehkontrolle gestreift und das Anflugobjekt mosaikiert
-texturiert war. Bei gleicher Textur bleiben 1.5x. Der Test dazu steht als
-`xfail` in `connectome/tests/test_looming.py` und meldet sich, sobald jemand es
-löst. Nötig wäre ein Encoder, der das räumliche **Muster** der
-Bewegungsrichtung unterscheidet (bei Drehung gleichförmig, beim Anflug
-divergent) statt das Vorhandensein von Vertikalbewegung.
+**Spezifität, fünfter Anlauf.** Verhältnis Anflug zu Drehung; unter 1.0 heißt,
+der Fluchtkreis feuert beim Drehen stärker als beim drohenden Aufprall:
+
+| Encoder-Variante | Selektivität |
+|---|---|
+| Auswärtsbewegung pro Bildhälfte | 0.52x |
+| deren räumliche Divergenz | 0.48x |
+| dieselbe auf retinotopem 4×8-Raster | 0.65x |
+| horizontal + vertikal konjunktiv | ~~4.39x~~ konfundiert, real 1.5x |
+| **Opponenz: erst mitteln, dann rektifizieren** | **Drehung exakt 0** |
+
+Alle vier Fehlschläge hatten dieselbe Ursache: **Rektifizierung pro Pixel vor
+dem Mitteln**. Das wirft die negative Hälfte des Radialfelds weg — und genau
+die hebt eine Drehung auf. Erst die vorzeichenbehaftete Radialkomponente über
+die Bildmitte mitteln, dann rektifizieren.
+
+Drei Kontrollen, alle bei 0.00000: Rückzug, rotierende Trommel, und
+Eigendrehung der Drohne (letztere schwenkt die ganze Szene inklusive des
+isotropen Mosaikbodens — die Trommelkontrolle allein würde nicht reichen, weil
+ein vertikales Gitter ein Reiz ist, auf dem man leicht aus den falschen Gründen
+selektiv aussieht).
 
 ## Voraussetzungen
 

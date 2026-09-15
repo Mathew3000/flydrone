@@ -315,59 +315,62 @@ def encode_to_drive_looming(
 ) -> np.ndarray:
     """Radial-expansion drive for the LC4/LPLC2 looming populations.
 
-    Expansion is motion pointing away from the image centre in BOTH axes. Yaw
-    rotation is motion pointing one way along the horizontal axis and nowhere
-    at all along the vertical. Requiring both axes to read outward is therefore
-    what separates an approach from a turn, and it is the crude form of the
-    radial motion opponency LPLC2 is characterised by (Klapoetke et al. 2017),
-    where four directional inputs arranged radially must agree.
+    Expansion points away from the image centre everywhere; a yaw turn points
+    one way everywhere. So the discriminator is the RADIAL component of motion,
+    integrated across the centre:
 
-    Getting here took three attempts, all measured, because the first two are
-    the obvious ones (selectivity below is approach-to-rotation, so anything
-    under 1.0 means the escape circuit fires harder at a turn than at an
-    impending collision):
+        radial = mean over the image of  resp(x) * sign(x - centre)
 
-        horizontal outward motion, pooled per hemifield     0.52x
-        spatial divergence of that horizontal field         0.48x
-        the same on a retinotopic 4x8 patch grid       0.51-0.65x
-        horizontal AND vertical outward, conjunctive        4.39x
+    Under rotation resp is roughly constant, so the two halves contribute
+    opposite signs and cancel. Under expansion both halves contribute
+    positively. That cancellation is the whole mechanism, and it is what
+    "opponency" means.
 
-    The failure was not resolution -- adding retinotopy barely moved it -- it
-    was that the encoder had no vertical motion channel at all, so rotation and
-    expansion were literally indistinguishable to it. See reichardt_response's
-    `axis` parameter.
+    The order of operations is the entire point, and getting it wrong is what
+    made four earlier attempts fail. Rectifying per pixel BEFORE pooling
+    destroys the cancellation: the inward-moving half contributes zero instead
+    of a negative, so rotation survives the pooling intact. Measured, expansion
+    against translation of the SAME texture:
 
-    Combined with min() rather than a sum or product: a conjunction is what
-    "both directions must agree" means, and unlike a product it keeps the
-    output in the same units as either channel, so the gain stays comparable to
-    the other encoders'.
+        rectify per pixel, then pool    1.10x isotropic,  1.00x striped
+        pool the signed radial, then rectify   translation exactly 0.00000
+                                               isotropic,  8.5x striped
 
-    Drives "looming_L"/"looming_R" (see
-    local_maleCNS.local_fetch_looming_subnetwork) from its own hemifield, so an
-    object approaching off to one side excites that side more -- the
-    lateralisation an escape turn would need.
+    For comparison, the earlier attempts, all of which rectified first:
+    hemifield outward 0.52x, its spatial divergence 0.48x, retinotopic 4x8
+    grid 0.65x, and a horizontal-plus-vertical conjunction that measured 4.39x
+    but only because it compared a striped rotating drum against a
+    mosaic-textured approaching object -- a vertical grating has no vertical
+    luminance gradient, so that channel read zero on it whether it rotated or
+    expanded. That number separated two textures, not two motions.
+
+    Lateralisation is applied as a weighting, not as a second opponent
+    computation: the rectified global radial signal is the looming magnitude
+    (it is what rejects rotation, and it only rejects rotation because it
+    integrates across the centre), and it is then split between the two
+    populations in proportion to where the motion energy actually sits. An
+    object approaching off to one side therefore excites that side more without
+    reopening the hole that per-hemifield pooling would.
     """
     drive = np.zeros(n_neurons, dtype=np.float64)
-    resp_h = reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=1)
-    resp_v = reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=0)
-    midx, midy = resp_h.shape[1] // 2, resp_v.shape[0] // 2
+    resp = reichardt_response(frame_prev, frame_curr, spacing=spacing, axis=1)
+    h, w = resp.shape
+    centre = w / 2.0
+    outward_sign = np.where(np.arange(w) < centre, -1.0, 1.0)
 
-    # outward = away from the image centre: leftward on the left, rightward on
-    # the right; upward in the top half, downward in the bottom half
-    out_h_l = float(np.mean(np.clip(-resp_h[:, :midx], 0, None)))
-    out_h_r = float(np.mean(np.clip(resp_h[:, midx:], 0, None)))
-    out_v_l = float(np.mean(np.clip(-resp_v[:midy, :midx], 0, None))
-                    + np.mean(np.clip(resp_v[midy:, :midx], 0, None)))
-    out_v_r = float(np.mean(np.clip(-resp_v[:midy, midx:], 0, None))
-                    + np.mean(np.clip(resp_v[midy:, midx:], 0, None)))
+    # pool first, rectify second -- see docstring
+    looming = max(float(np.mean(resp * outward_sign)), 0.0)
 
-    left_energy = min(out_h_l, out_v_l)
-    right_energy = min(out_h_r, out_v_r)
+    mid = int(centre)
+    energy_l = float(np.mean(np.abs(resp[:, :mid])))
+    energy_r = float(np.mean(np.abs(resp[:, mid:])))
+    total = energy_l + energy_r
+    frac_l, frac_r = (0.5, 0.5) if total <= 0 else (energy_l / total, energy_r / total)
 
     idx_l = cell_type_indices.get("looming_L")
     idx_r = cell_type_indices.get("looming_R")
     if idx_l is not None and len(idx_l):
-        drive[idx_l] = gain * left_energy
+        drive[idx_l] = gain * looming * 2.0 * frac_l
     if idx_r is not None and len(idx_r):
-        drive[idx_r] = gain * right_energy
+        drive[idx_r] = gain * looming * 2.0 * frac_r
     return drive

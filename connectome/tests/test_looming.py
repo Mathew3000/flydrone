@@ -7,17 +7,19 @@ Simulator-free like test_optomotor.py: an expanding texture and a translating
 one are all this needs, and they isolate the property under test better than a
 drum does.
 
-What this guards is specificity, and it currently records a FAILURE to achieve
-it. Four encoder formulations were measured, approach-to-rotation (under 1.0
-means the escape circuit fires harder at a turn than at an impending
-collision): horizontal outward motion pooled per hemifield 0.52x, its spatial
-divergence 0.48x, the same on a retinotopic 4x8 grid 0.65x, and horizontal AND
-vertical outward combined conjunctively 4.39x -- except that last number is
-confounded, because it compared a mosaic-textured approaching object against a
-vertically striped rotating drum, and a vertical grating has no vertical
-luminance gradient for the vertical channel to find. Matched textures give
-1.5x. The xfail below keeps that honest and will announce itself the day
-someone fixes it.
+What this guards is specificity, which took five attempts. Approach-to-rotation
+below 1.0 means the escape circuit fires harder at a turn than at an impending
+collision: hemifield outward motion 0.52x, its spatial divergence 0.48x, a
+retinotopic 4x8 grid 0.65x, a horizontal-plus-vertical conjunction an apparent
+4.39x that was confounded (striped drum against mosaic object -- it separated
+textures, not motions; matched textures gave 1.5x), and finally opponent
+pooling before rectification, which puts translation at exactly 0.0.
+
+All four failures share one cause: rectifying per pixel before pooling. That
+throws away the negative half of the radial field, and the negative half is
+exactly what cancels a rotation. Any future change that moves a clip() back in
+front of a mean() will reintroduce all of it, which is what these tests are
+here to catch.
 """
 import os
 import sys
@@ -85,25 +87,27 @@ def drive_for(scale=1.0, shift=0.0, seed=0):
     return float(d[IDX["looming_L"]].mean() + d[IDX["looming_R"]].mean())
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Known limitation, kept as a live marker rather than deleted. The encoder "
-    "is not selective for expansion over translation when both carry the same "
-    "texture: measured 1.5x, where anything near 1.0 means an escape circuit "
-    "that fires at a turn. The 4.39x reported from scripts/m5_looming.py is "
-    "confounded -- its rotation control used the vertically striped drum and "
-    "its looming object an isotropic mosaic, and a vertically striped pattern "
-    "has no vertical luminance gradient at all, so the vertical channel reads "
-    "exactly 0.00000 on it whether it translates OR expands. That measurement "
-    "separated two textures, not two motions. Flip this to a passing test only "
-    "with an encoder that discriminates the spatial PATTERN of motion "
-    "direction (uniform for rotation, diverging for approach) rather than the "
-    "presence of vertical motion."))
 def test_expansion_beats_translation():
-    """The property a looming detector must have and this one does not yet."""
+    """The property a looming detector must have: an approach excites it, a
+    turn does not.
+
+    This was an xfail for as long as the encoder rectified per pixel before
+    pooling, which destroys the opponent cancellation that rejects rotation.
+    Measured then: 0.52x for hemifield outward motion, 0.48x for its spatial
+    divergence, 0.65x with a retinotopic grid -- all below 1.0, i.e. an escape
+    circuit that fires harder at turning than at an impending collision. A
+    horizontal-plus-vertical conjunction measured 4.39x but only by comparing a
+    striped rotating drum against a mosaic-textured approaching object, which
+    separates textures rather than motions.
+
+    Translation now reads exactly 0.0, so this asserts a ratio only to keep the
+    failure message informative if that ever stops being true.
+    """
     expansion = drive_for(scale=1.10)
     translation = drive_for(shift=3.0)
-    assert expansion > 3 * translation, (
-        f"expansion {expansion:.5f} vs translation {translation:.5f}"
+    assert expansion > 10 * translation, (
+        f"expansion {expansion:.5f} vs translation {translation:.5f} -- is the "
+        "encoder rectifying per pixel before pooling again?"
     )
 
 
@@ -125,14 +129,14 @@ def test_vertical_channel_responds_to_vertical_motion():
 def test_contraction_is_weaker_than_expansion():
     """A receding object must not drive the pathway as hard as an approaching one.
 
-    The threshold is the measured ratio (0.155) with headroom, not a round
-    number: per-pixel rectification before pooling gives any noisy field a
-    positive mean, so exact silence is not achievable here and asserting it
-    would only encode a wish.
+    Contraction reads exactly 0.0 now that pooling happens before
+    rectification -- an inward-moving field has a negative radial mean, and the
+    rectifier removes it outright. The assertion keeps a little headroom rather
+    than demanding the exact zero, since the value depends on the stimulus.
     """
     contraction = drive_for(scale=1 / 1.10)
     expansion = drive_for(scale=1.10)
-    assert contraction < 0.25 * expansion, (
+    assert contraction < 0.05 * expansion, (
         f"contraction {contraction:.5f} should stay well below expansion {expansion:.5f}"
     )
 
@@ -160,13 +164,5 @@ def test_escape_neurons_fire_for_expansion_only():
             peak = max(peak, left + right)
         return peak
 
-    expansion = run(scale=1.10)
-    translation = run(shift=3.0)
-    assert expansion > 0.0, "an expanding pattern must fire the escape neurons"
-    # NOT asserting silence for translation: the encoder cannot deliver that yet
-    # (see the xfail above). What is pinned is that expansion is the stronger of
-    # the two, which is the weakest claim the pathway has to support to be worth
-    # anything at all.
-    assert expansion > translation, (
-        f"expansion {expansion:.5f} must at least exceed translation {translation:.5f}"
-    )
+    assert run(scale=1.10) > 0.0, "an expanding pattern must fire the escape neurons"
+    assert run(shift=3.0) == 0.0, "a translating pattern must leave them silent"

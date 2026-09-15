@@ -63,6 +63,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import pybullet as pb
+
 from gym_pybullet_drones.envs.VisionAviary import VisionAviary
 from gym_pybullet_drones.envs.BaseAviary import DroneModel
 from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
@@ -120,16 +122,35 @@ def run_trial(condition, speed=2.0, omega=1.2):
 
     net = LIFNetwork(n_neurons=net_spec["n_neurons"], weights=W, dt=NET_DT)
     dist = START_DIST if condition != "recede" else STOP_DIST
-    drum_angle, prev, log = 0.0, None, []
+    drum_angle, yaw_setpoint, prev, log = 0.0, 0.0, None, []
     n_frames = int(abs(START_DIST - STOP_DIST) / speed * CAMERA_HZ)
 
     for i in range(n_frames):
         if condition in ("approach", "recede"):
             dist += (-speed if condition == "approach" else +speed) / CAMERA_HZ
             move_object(env.CLIENT, obj, (dist, 0, 1.0))
-        else:                                             # rotation control
+        elif condition == "rotation":                     # drum spins, drone still
             drum_angle += omega / CAMERA_HZ
             rotate_drum(env.CLIENT, drum, drum_angle)
+            move_object(env.CLIENT, obj, (START_DIST, 0, 1.0))
+        else:                                             # condition == "yaw"
+            # The drone turns instead: the whole scene sweeps, including the
+            # isotropically textured floor. The drum control alone would not
+            # settle the question, because its walls are a vertical grating and
+            # a grating is an easy stimulus to look selective on for the wrong
+            # reason -- that is exactly how the earlier conjunctive encoder
+            # produced a confounded 4.39x.
+            yaw_setpoint += omega / CAMERA_HZ
+            # Imposed directly rather than flown: the trial loop deliberately
+            # does not advance physics (every other condition wants the drone
+            # perfectly still, so that the only motion in the image is the
+            # stimulus). Asking the PID to turn would require stepping physics
+            # and would add its own transients to the very signal being
+            # measured.
+            quat = pb.getQuaternionFromEuler([0.0, 0.0, yaw_setpoint])
+            pb.resetBasePositionAndOrientation(env.DRONE_IDS[0], list(HOVER_XYZ), quat,
+                                               physicsClientId=env.CLIENT)
+            env.pos[0], env.quat[0] = HOVER_XYZ.copy(), np.array(quat)
             move_object(env.CLIENT, obj, (START_DIST, 0, 1.0))
         curr = env._getDroneImages(0, segmentation=False)[0]
 
@@ -157,7 +178,8 @@ def run_trial(condition, speed=2.0, omega=1.2):
 CONDITIONS = [("approach slow", dict(condition="approach", speed=2.0)),
               ("approach fast", dict(condition="approach", speed=4.0)),
               ("recede", dict(condition="recede", speed=2.0)),
-              ("rotation", dict(condition="rotation", speed=2.0))]
+              ("rotation", dict(condition="rotation", speed=2.0)),
+              ("self-yaw", dict(condition="yaw", speed=2.0))]
 
 results = {}
 for label, kwargs in CONDITIONS:
@@ -180,10 +202,10 @@ print(f"\nangular size at peak: slow {peak_sizes['approach slow']:.1f} deg, "
 print("Same angular size across approach speeds -> a size-threshold trigger,")
 print("as the Giant Fiber is usually described.")
 
-quiet = {l: float(results[l][:, 4].max()) for l in ("recede", "rotation")}
+quiet = {l: float(results[l][:, 4].max()) for l in ("recede", "rotation", "self-yaw")}
 loud = max(results[l][:, 4].max() for l, _ in CONDITIONS[:2])
 print(f"\nspecificity: approach {loud:.5f} vs recede {quiet['recede']:.5f} "
-      f"vs rotation {quiet['rotation']:.5f}")
+      f"vs drum rotation {quiet['rotation']:.5f} vs self-yaw {quiet['self-yaw']:.5f}")
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
 for label, log in results.items():
