@@ -1,89 +1,115 @@
 # fly-drone-sim
 
-Fliegen-Konnektom-Simulation (Fly Rig Anatomy Projekt, boat.horse/fly) steuert
-eine simulierte Drohne statt eines Strandbeest-Laufroboters. Vollstaendig in
-Simulation, kein Echtflug geplant.
+Ein echtes Fliegen-Konnektom (166.700 LIF-Neuronen, MaleCNS-Datensatz)
+steuert eine simulierte Drohne statt eines physischen Roboters. Basiert auf
+dem [boat.horse/fly](https://boat.horse/fly/)-Projekt (Fly Rig Anatomy),
+das dieselbe Konnektom-Pipeline aktuell an einen Strandbeest-Laufroboter
+anschließt.
 
-Voller Plan: [`docs/projektplan.md`](docs/projektplan.md).
+Vollständig simulationsbasiert -- kein Echtflug geplant.
 
-## Stand
+## Inhalt
 
-- [x] M0 -- Simulator gewaehlt und Sanity-Check bestanden: `scripts/sanity_hover.py`
-      steuert 4 Rotoren per direktem RPM-Wert an und liest ein RGB-Kamerabild
-      aus der Drohnen-Perspektive aus (`files/sanity/frame_0.png`).
-- [x] M1 -- Kamerabilder offline durch Medulla-Encoder (`connectome/medulla_encoder.py`,
-      optischer Fluss via OpenCV) + eine LIF-Konnektom-Simulation
-      (`connectome/lif_network.py`, scipy.sparse) geschickt und Motor-Neuron-
-      Output geloggt (`scripts/m1_offline_test.py`, `connectome/tests/test_toy_network.py`
-      gegen ein synthetisches Testnetz). Zusaetzlich jetzt mit dem echten
-      MaleCNS-Konnektom validiert: `connectome/tests/test_real_connectome.py`
-      (siehe M2-Eintrag unten und "Echte Konnektom-Daten" weiter unten).
-- [x] M2 -- Geschlossener Kreis, Phase A:
-      - `scripts/m2_closed_loop.py` -- synthetisches Testnetz. Kamera ->
-        Medulla-Encoder -> LIF-Sim -> Motor-Decoder steuert Gier- und
-        Hoehen-Sollwert; Roll/Pitch/Position haelt gym-pybullet-drones'
-        eigener DSLPIDControl-Regler (bewusst wiederverwendet statt selbst
-        gebaut).
-      - `scripts/m2_real_connectome.py` -- **echtes MaleCNS-Konnektom**
-        (T4/T5 -> HS/H1/H2, der reale optomotorische Kurskorrektur-Pfad,
-        aus den lokalen Bulk-Daten, siehe unten). Ergebnis (14.09.2026):
-        Drohne steigt stabil auf Zielhoehe (roll/pitch bleiben ~0, z
-        pendelt sich bei 1.005 m ein) und der Gier-Sollwert driftet
-        sichtbar (~2.7°) mit dem, was die Kamera an Bewegung sieht, waehrend
-        des Steigflugs -- sobald sie ruhig schwebt, faellt auch der
-        Netzwerk-Output wieder auf ~0. **Damit haelt die echte
-        Fliegen-Konnektom-Simulation die Drohne tatsaechlich in der Luft.**
-        Musste dafuer extra kalibriert werden -- die rohen
-        Synapsenanzahl-Gewichte aus MaleCNS sind ~1000x staerker als das
-        Testnetz und saettigen ungefiltert beide Motor-Pools gleichzeitig
-        auf den Maximalwert (siehe `WEIGHT_SCALE` in
-        `connectome/tests/test_real_connectome.py`'s Docstring fuer Details).
-- [ ] M3 -- Tuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset).
-- [ ] M4 -- Phase B, 4 Freiheitsgrade.
-- [ ] M5 -- Auswertung (Stretch): emergentes Looming-Ausweichen / Hoehenhaltung?
+- [Überblick](#überblick)
+- [Status](#status)
+- [Voraussetzungen](#voraussetzungen)
+- [Installation](#installation)
+- [Nutzung](#nutzung)
+- [Echte Konnektom-Daten](#echte-konnektom-daten)
+- [Projektstruktur](#projektstruktur)
+- [Design-Entscheidungen](#design-entscheidungen)
+- [Datenquellen & Lizenzen](#datenquellen--lizenzen)
+- [Weiterführende Dokumentation](#weiterführende-dokumentation)
 
-## Ordnerstruktur
+## Überblick
 
 ```
-flydrone/
-  simulator/     vendorter gym-pybullet-drones v1.0.0 (siehe PATCHES.md)
-  scripts/       Sanity-/Test-Skripte, spaeter Trainings-/Eval-Skripte
-  connectome/    Medulla-Encoder, LIF-Netzwerk-Engine, Motor-Decoder, Daten-Loader:
-                 - data_loader.py: synthetisches Testnetz + neuPrint-API-Anbindung
-                 - local_maleCNS.py: laedt echte MaleCNS-Konnektom-Daten direkt
-                   aus den lokalen Bulk-Dateien (kein Account/Token noetig,
-                   keine Netzwerk-Query-Limits) -- siehe "Echte Konnektom-Daten"
-                   weiter unten
-  data/raw/      Lokale MaleCNS-Bulk-Dateien (gitignored, siehe unten) --
-                 nicht im Repo, muessen einmalig heruntergeladen werden
-  files/         Simulator-Outputs (Bilder, Logs) -- keine Quelldateien
-  docs/          Projektplan und weitere Notizen
-  requirements.txt
-  PATCHES.md     Aenderungen am vendorten Simulator-Code, mit Begruendung
+Drohnen-Kamera (RGB) -> Medulla-Encoder (optischer Fluss)
+   -> LIF-Konnektom-Sim (T4/T5 -> HS/H1/H2) -> Motor-Decoder
+   -> Gier-/Höhen-Sollwert -> Flugregler (PID) -> Drohnen-Physik
 ```
 
-## Echte Konnektom-Daten: lokale Bulk-Dateien (kein Account noetig)
+Roll/Pitch/Position übernimmt ein fertiger, bewährter PID-Regler
+(`DSLPIDControl` aus gym-pybullet-drones); nur Gier und Höhe kommen aus der
+Konnektom-Simulation. Details und Architekturdiagramm: [`docs/projektplan.md`](docs/projektplan.md).
 
-Die MaleCNS-Rohdaten (Janelia FlyEM + Google Research, CC-BY-lizenziert)
-gibt es als direkten, oeffentlichen Download -- kein neuPrint-Account/Token
-noetig (das ist nur fuer einzelne API-Queries erforderlich, siehe
-`docs/connectome-data-access.md`). Zwei Dateien werden gebraucht: die
-Body-Annotationen (~13 MB, Zelltyp/Seite pro Neuron) und die komplette
-Konnektivitaets-Gewichtsmatrix (~1.1 GB, ~152 Mio. Zeilen).
+## Status
 
-**Download (PowerShell):**
+| Meilenstein | Beschreibung | Stand |
+|---|---|---|
+| M0 | Simulator gewählt, RPM-Ansteuerung + Kamera-Sanity-Check | ✅ erledigt |
+| M1 | Medulla-Encoder -> LIF-Netzwerk -> Motor-Decoder, offline getestet | ✅ erledigt (synthetisch + echtes Konnektom) |
+| M2 | Geschlossener Regelkreis, Phase A (Gier + Höhe) | ✅ erledigt (synthetisch + echtes Konnektom) |
+| M3 | Feintuning (Gain-Kalibrierung Spike-Rate <-> RPM-Offset) | ⏳ offen |
+| M4 | Phase B, 4 Freiheitsgrade | ⏳ offen |
+| M5 | Auswertung (Stretch): emergentes Looming-Ausweichen / Höhenhaltung | ⏳ offen |
 
-```powershell
-cd flydrone
-mkdir data\raw -Force
-$ProgressPreference = 'SilentlyContinue'  # sonst bremst Invoke-WebRequest/curl-Alias massiv
-curl.exe -L -o data\raw\body-annotations-male-cns-v1.0-minconf-0.5.feather `
-  https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome/body-annotations-male-cns-v1.0-minconf-0.5.feather
-curl.exe -L -o data\raw\connectome-weights-male-cns-v1.0-minconf-0.5.feather `
-  https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome/connectome-weights-male-cns-v1.0-minconf-0.5.feather
+**Aktuelles Ergebnis (M2, `scripts/m2_real_connectome.py`):** Die Drohne
+hält mit dem echten MaleCNS-Konnektom (T4/T5 -> HS/H1/H2, 13.597 Neuronen,
+207.059 Synapsen -- nicht dem synthetischen Testnetz) stabil die Höhe und
+reagiert im Gier-Kanal sichtbar auf das, was die Kamera an Bewegung sieht.
+Details, inklusive der Gewichts-Kalibrierung, die dafür nötig war:
+[`docs/connectome-data-access.md`](docs/connectome-data-access.md).
+
+## Voraussetzungen
+
+- Python 3.10 (siehe [Design-Entscheidungen](#design-entscheidungen))
+- ~30 MB Platz für den vendorten Simulator, optional ~1.1 GB für die echten
+  Konnektom-Rohdaten
+
+## Installation
+
+```bash
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+bash scripts/setup_simulator.sh   # klont + patcht simulator/ (gitignored, ~28MB)
+pip install -r requirements.txt
 ```
 
-**Download (Linux/macOS):**
+Sanity-Check:
+
+```bash
+PYTHONPATH=simulator python scripts/sanity_hover.py
+```
+
+Erwartete Ausgabe: `HOVER_RPM`/`MAX_RPM`-Werte, eine Positionsangabe nach 3s
+simulierter Zeit, und `files/sanity/frame_0.png` (ein 48x64-Kamerabild aus
+Drohnensicht).
+
+## Nutzung
+
+| Skript | Was es macht | Konnektom |
+|---|---|---|
+| `scripts/sanity_hover.py` | M0: RPM-Ansteuerung + Kamerabild, kein Konnektom | -- |
+| `scripts/m1_offline_test.py` | M1: Kamera-Sequenz offline durch die Pipeline schicken | synthetisch |
+| `scripts/m2_closed_loop.py` | M2: geschlossener Regelkreis | synthetisch |
+| `scripts/m2_real_connectome.py` | M2: geschlossener Regelkreis | **echtes MaleCNS-Konnektom** (braucht die Rohdaten, siehe unten) |
+
+Alle Skripte mit `PYTHONPATH=simulator` ausführen, z. B.:
+
+```bash
+PYTHONPATH=simulator python scripts/m2_real_connectome.py
+```
+
+Tests:
+
+```bash
+PYTHONPATH=. python -m pytest connectome/tests/
+```
+
+(`test_real_connectome.py` wird automatisch übersprungen, wenn die lokalen
+Rohdaten -- siehe unten -- noch nicht heruntergeladen sind.)
+
+## Echte Konnektom-Daten
+
+Zwei Wege, echte MaleCNS-Daten zu benutzen:
+
+### a) Lokale Bulk-Dateien (empfohlen, kein Account nötig)
+
+Direkter, öffentlicher Download (Janelia FlyEM + Google Research,
+CC-BY-lizenziert) -- kein neuPrint-Account/Token nötig, keine
+Query-Größenlimits. Zwei Dateien: Body-Annotationen (~13 MB) und die
+komplette Konnektivitäts-Gewichtsmatrix (~1.1 GB, ~152 Mio. Zeilen).
 
 ```bash
 mkdir -p data/raw
@@ -93,62 +119,77 @@ curl -L -o data/raw/connectome-weights-male-cns-v1.0-minconf-0.5.feather \
   https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome/connectome-weights-male-cns-v1.0-minconf-0.5.feather
 ```
 
-`curl.exe` explizit (nicht `curl`, das in PowerShell ein Alias fuer
-`Invoke-WebRequest` ist und bei grossen Dateien wegen der Fortschrittsbalken-
-Anzeige stark bremst).
+Unter Windows/PowerShell: `curl.exe` statt `curl` verwenden (sonst greift
+der `Invoke-WebRequest`-Alias, dessen Fortschrittsbalken große Downloads
+stark ausbremst) und vorher `$ProgressPreference = 'SilentlyContinue'`
+setzen.
 
-Danach direkt nutzbar ohne Netzwerkzugriff, z. B.:
+Danach direkt nutzbar, ganz ohne Netzwerkzugriff:
 
 ```bash
-pip install pyarrow pandas scipy   # falls noch nicht in requirements.txt-Umgebung installiert
 python -c "from connectome.local_maleCNS import local_fetch_lr_subnetwork; n = local_fetch_lr_subnetwork(); print(n['n_neurons'], 'Neuronen,', n['weights'].nnz, 'Synapsen')"
-python scripts/m2_real_connectome.py   # echtes Konnektom haelt die Drohne in der Luft
+PYTHONPATH=simulator python scripts/m2_real_connectome.py
 ```
 
-Alle offiziellen Download-Links: https://male-cns.janelia.org/download/
+Alle offiziellen Download-Links: https://male-cns.janelia.org/download/.
+`connectome/local_maleCNS.py` liest die 1.1-GB-Gewichtsdatei
+speicherschonend im Batch-Streaming-Verfahren -- Details im Docstring dort.
 
-`connectome/local_maleCNS.py` liest die ~1.1 GB grosse Gewichtsdatei
-speicherschonend im Batch-Streaming-Verfahren (nie das ganze File auf einmal
-in den Speicher) -- Details im Docstring dort.
+### b) neuPrint-API (für einzelne Ad-hoc-Queries)
 
-## Echte Konnektom-Daten (neuPrint-API) einrichten
+`.env.example` nach `.env` kopieren und den neuPrint-API-Token eintragen
+(`.env` ist gitignored). `connectome/data_loader.py` liest ihn automatisch
+ein. Details: [`docs/connectome-data-access.md`](docs/connectome-data-access.md).
 
-Fuer einzelne Ad-hoc-Queries (z. B. neue Zelltypen erkunden) gibt es
-zusaetzlich die neuPrint-API. `.env.example` nach `.env` kopieren (im
-Projekt-Wurzelverzeichnis) und den neuPrint-API-Token eintragen -- `.env`
-ist gitignored, landet also nie im Repo. `connectome/data_loader.py` liest
-sie automatisch ein, kein manuelles Setzen von Windows-Umgebungsvariablen
-noetig. Details: `docs/connectome-data-access.md`.
-
-## Setup (dieser Rechner)
+## Projektstruktur
 
 ```
-python3 -m venv venv
-source venv/bin/activate   # oder venv\Scripts\activate unter Windows
-bash scripts/setup_simulator.sh   # klont + patcht simulator/ (gitignored, ~28MB)
-pip install -r requirements.txt
-PYTHONPATH=simulator python scripts/sanity_hover.py
+flydrone/
+  simulator/     vendorter gym-pybullet-drones v1.0.0, gitignored (siehe PATCHES.md)
+  scripts/       ausführbare Ein-Zweck-Skripte (siehe Nutzung oben)
+  connectome/
+    medulla_encoder.py   Kamerabild -> optischer Fluss -> Drive-Vektor
+    lif_network.py       LIF-Netzwerk-Engine (scipy.sparse)
+    motor_decoder.py     Spike-Raten -> normierte Aktuator-Werte
+    data_loader.py        synthetisches Testnetz + neuPrint-API-Anbindung
+    local_maleCNS.py      echte MaleCNS-Daten aus den lokalen Bulk-Dateien
+    tests/                 Regressionstests (synthetisch + echtes Konnektom)
+  data/raw/      lokale MaleCNS-Bulk-Dateien, gitignored (siehe oben)
+  files/         Simulator-Outputs (Bilder, Logs), gitignored
+  docs/          Projektplan, Datenzugriffs-Notizen
+  requirements.txt
+  PATCHES.md     Änderungen am vendorten Simulator-Code, mit Begründung
 ```
 
-Erwartete Ausgabe: `HOVER_RPM`/`MAX_RPM`-Werte, eine Positionsangabe nach 3s
-simulierter Zeit, und `files/sanity/frame_0.png` (ein 48x64-Kamerabild aus
-Drohnensicht).
+## Design-Entscheidungen
 
-## Warum v1.0.0 statt der aktuellen Simulator-Version?
+**Simulator: gym-pybullet-drones, Tag `v1.0.0`.** Die aktuelle
+Hauptversion braucht Python >=3.12; `v1.0.0` läuft mit Python 3.10 und
+bietet mit `VisionAviary` genau das Nötige: direkte RPM-Ansteuerung aller
+vier Rotoren plus Kamerabild aus Drohnensicht, ohne eingebauten Flugregler
+im Weg. Details und die zwei nötigen Kompatibilitäts-Patches (Python
+3.10/aktuelles NumPy):
+[`PATCHES.md`](PATCHES.md). Alternativen (Webots, ArduPilot+Gazebo, Isaac
+Sim, eigener Simulator) und warum sie verworfen wurden:
+[`docs/projektplan.md`](docs/projektplan.md).
 
-Die derzeitige Hauptversion von gym-pybullet-drones braucht Python >=3.12.
-v1.0.0 (die Version aus dem urspruenglichen Paper) laeuft mit Python 3.10 und
-bietet mit `VisionAviary` genau das, was wir brauchen: direkte RPM-Ansteuerung
-aller vier Rotoren plus Kamerabild aus Drohnensicht, ohne eingebauten
-Flugregler im Weg. Details und die zwei noetigen Kompatibilitaets-Patches in
-[`PATCHES.md`](PATCHES.md). Ein spaeteres Upgrade auf die aktuelle Version
-(z. B. sobald auf Python 3.12 gewechselt wird) ist moeglich und wuerde die
-Patches ueberfluessig machen.
+**Kein eigener Konnektom-Sim-Code aus boat.horse/fly übernommen.**
+boat.horse/fly veröffentlicht keinen eigenen Quellcode für die dort
+gezeigte Pipeline. `connectome/` ist komplett eigenständig geschrieben.
+Verwandte, aber unabhängige Referenzimplementierungen (DOOMFLY,
+eonsystems/fly-brain u. a.) sind im Projektplan verlinkt.
 
-## Wichtig: kein eigener Neuronen-Sim-Code hier (noch)
+## Datenquellen & Lizenzen
 
-boat.horse/fly veroeffentlicht keinen eigenen Quellcode fuer die dort
-beschriebene Konnektom-Pipeline. Die im Projektplan erwaehnten Repos
-(DOOMFLY, eonsystems/fly-brain, u.a.) sind verwandte, aber eigenstaendige
-Implementierungen -- kein Fork-Ziel, sondern Referenzmaterial fuer den
-Medulla-Encoder/Motor-Decoder-Teil, der noch geschrieben werden muss.
+- **MaleCNS-Konnektomdaten**: Janelia FlyEM + Google Research,
+  [male-cns.janelia.org](https://male-cns.janelia.org/), Lizenz **CC-BY**
+  (Attribution erforderlich).
+- **gym-pybullet-drones**: [utiasDSL/gym-pybullet-drones](https://github.com/utiasDSL/gym-pybullet-drones),
+  MIT-Lizenz, vendort unter `simulator/` (siehe [`PATCHES.md`](PATCHES.md)).
+- Eigener Code in diesem Repo: bisher ohne explizite Lizenz.
+
+## Weiterführende Dokumentation
+
+- [`docs/projektplan.md`](docs/projektplan.md) -- vollständiger Projektplan, Architektur, Simulator-Evaluation
+- [`docs/connectome-data-access.md`](docs/connectome-data-access.md) -- Datenzugriff, Zelltyp-Recherche, Kalibrierungs-Historie
+- [`PATCHES.md`](PATCHES.md) -- Änderungen am vendorten Simulator-Code

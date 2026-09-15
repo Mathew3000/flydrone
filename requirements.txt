@@ -9,8 +9,11 @@ gym==0.26.2
 pybullet
 opencv-python-headless
 
-# Optional: nur für den echten MaleCNS-Datenzugriff (connectome/data_loader.py
-# ::fetch_from_neuprint). Nicht nötig für Sanity-Check/M1/M2 mit dem
-# synthetischen Testnetz.
-neuprint-python
+# Optional: nur fuer den echten MaleCNS-Konnektom-Zugriff.
+# - pandas, pyarrow: lokale Bulk-Dateien lesen (connectome/local_maleCNS.py)
+# - neuprint-python: einzelne Ad-hoc-Queries gegen die neuPrint-API
+#   (connectome/data_loader.py::fetch_from_neuprint)
+# Nicht noetig fuer Sanity-Check/M1/M2 mit dem synthetischen Testnetz.
 pandas
+pyarrow
+neuprint-python
